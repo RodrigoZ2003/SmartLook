@@ -2,7 +2,9 @@
 from collections import Counter
 
 from django.db import transaction
+from django.db.models import Count, Q
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -13,8 +15,11 @@ from common.utils import log_audit
 from apps.users_auth.models import Cliente, Empresa, Usuario
 from apps.catalog.models import Sucursal
 from apps.users_auth.suscripciones import requiere_funcion
-from .models import Cart, CartItem, Delivery, Order, OrderItem, PosSale, Devolucion, SyncOperacion
+from .models import (
+    Cart, CartItem, Delivery, Order, OrderItem, PosSale, Devolucion, SyncOperacion, CambioPrenda,
+)
 from .serializers import (
+    CambioPrendaSerializer,
     CartSerializer,
     CartItemSerializer,
     OrderSerializer,
@@ -24,17 +29,23 @@ from .serializers import (
     SyncOperacionSerializer,
 )
 from .sync import MAX_OPERACIONES_POR_LOTE, SyncService
-from .services import CartService, CheckoutService, PosSaleService, DevolucionService
+from .conflictos import ConflictoService
+from .cambios import (
+    CambioService, OrigenCambio, alternativas, cargar_origen, motivo_no_elegible,
+)
+from .services import CartService, CheckoutService, PosSaleService
+from .devoluciones import (
+    PORCENTAJE_RETENCION, DevolucionService, cargar_compra, leer_items, metodo_de_reembolso,
+)
+from .devoluciones import calcular as calcular_devolucion
 from .integrations.envio import cotizar, EnvioError
 from rest_framework.permissions import IsAuthenticated
-
 
 def _sucursal_activa(sucursal_id):
     """Sucursal ACTIVA de una empresa ACTIVA (el cliente puede comprar en cualquiera)."""
     return Sucursal.objects.select_related("id_empresa").get(
         pk=sucursal_id, estado="ACTIVA", id_empresa__estado="ACTIVA"
     )
-
 
 class CartViewSet(ReadOnlyModelViewSet):
     """Carritos del cliente. SaaS: tiene un carrito ACTIVO por cada empresa."""
@@ -178,7 +189,6 @@ class CartViewSet(ReadOnlyModelViewSet):
             "fuente_distancia": cotizacion["fuente_distancia"],
         })
 
-
 class CartItemViewSet(ModelViewSet):
     serializer_class = CartItemSerializer
     permission_classes = [IsCliente]
@@ -210,8 +220,21 @@ class CartItemViewSet(ModelViewSet):
         cart.save(update_fields=["fecha_actualizacion"])
 
     def perform_destroy(self, instance):
-        """Quita la prenda del carrito (si venía de una reserva, repone su stock)."""
+        """Quita la prenda del carrito (si venía de una reserva, repone su stock).
+
+        MODIFICADO (Fase 2 - reservas con anticipo): una reserva pagada se
+        retira completa; para no llevarla hay que cancelar la reserva (CU17),
+        que devuelve lo pagado menos el 10%.
+        """
         if instance.id_reserva_item_id:
+            reserva = instance.id_reserva_item.id_reserva
+            if reserva.monto_pagado:
+                raise ValidationError({
+                    "error": (
+                        f"Esta prenda es de la Reserva #{reserva.id_reserva}, que ya está pagada. "
+                        f"Para no llevarla, cancela la reserva desde Mis reservas."
+                    )
+                })
             from apps.reservations.services import ReservationStockService
             ReservationStockService.liberar_item(
                 instance.id_reserva_item,
@@ -222,7 +245,6 @@ class CartItemViewSet(ModelViewSet):
                 ),
             )
         instance.delete()
-
 
 class OrderViewSet(ReadOnlyModelViewSet):
     serializer_class = OrderSerializer
@@ -236,7 +258,6 @@ class OrderViewSet(ReadOnlyModelViewSet):
             .select_related("id_empresa", "id_sucursal")
             .order_by("-fecha_creacion")
         )
-
 
 class PosSaleViewSet(ReadOnlyModelViewSet):
     serializer_class = PosSaleSerializer
@@ -253,11 +274,20 @@ class PosSaleViewSet(ReadOnlyModelViewSet):
         sucursal_id = request.data.get("id_sucursal")
         metodo_pago = request.data.get("metodo_pago")
         items = request.data.get("items", [])
+        # NUEVO (CU08): cliente opcional, indicado por su correo.
+        correo_cliente = (request.data.get("correo_cliente") or "").strip()
 
         if not sucursal_id:
             return Response({"error": "Debe indicar la sucursal."}, status=400)
         if metodo_pago not in ("EFECTIVO", "TARJETA", "QR"):
             return Response({"error": "Método de pago inválido."}, status=400)
+        cliente = None
+        if correo_cliente:
+            cliente = Cliente.objects.filter(id_usuario__correo__iexact=correo_cliente).first()
+            if cliente is None:
+                return Response(
+                    {"error": f"No existe un cliente con el correo {correo_cliente}."}, status=400
+                )
 
         # SaaS: el cajero solo puede vender en sucursales de su empresa.
         try:
@@ -266,15 +296,17 @@ class PosSaleViewSet(ReadOnlyModelViewSet):
             return Response({"error": "Sucursal no encontrada."}, status=404)
 
         try:
-            venta = PosSaleService.registrar_venta(request.user, sucursal, items, metodo_pago)
+            with transaction.atomic():
+                venta = PosSaleService.registrar_venta(request.user, sucursal, items, metodo_pago)
+                if cliente is not None:
+                    venta.id_cliente = cliente
+                    venta.save(update_fields=["id_cliente"])
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
 
         return Response(PosSaleSerializer(venta).data, status=201)
 
-
 ROLES_GESTION = ["SUPER_ADMIN", "ADMIN_EMPRESA", "ENCARGADO_SUCURSAL"]
-
 
 class DeliveryViewSet(ReadOnlyModelViewSet):
     serializer_class = DeliveryEntregaSerializer
@@ -405,107 +437,114 @@ class DeliveryViewSet(ReadOnlyModelViewSet):
         self._auditar(request, "ENTREGA_COMPLETADA", d, "marcó entregado el pedido")
         return Response(self.get_serializer(self.get_object()).data)
 
-
-# NUEVO (devoluciones)
-class DevolucionViewSet(ReadOnlyModelViewSet):
-    """
-    Devoluciones de pedidos con delivery ya entregados. Solo lectura por
-    el router estándar (el cliente ve las suyas, el personal ve las de su
-    empresa, filtrable por sucursal - así queda visible en administración);
-    la solicitud real pasa por la acción 'solicitar', que valida la orden,
-    repone stock y crea Devolucion + DevolucionItem.
-    """
-    serializer_class = DevolucionSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_permissions(self):
-        """Solicitar es solo para clientes; consultar, para cualquier autenticado."""
-        if self.action == "solicitar":
-            return [IsCliente()]
-        return [IsAuthenticated()]
-
-    def get_queryset(self):
-        """El personal ve las devoluciones de su empresa; el cliente, las suyas."""
-        queryset = Devolucion.objects.all().order_by("-fecha_creacion")
-        alcance = alcance_de(self.request)
-        es_personal = self.request.user.roles.filter(
-            nombre__in=["SUPER_ADMIN", "ADMIN_EMPRESA", "ENCARGADO_SUCURSAL"]
-        ).exists()
-        if es_personal:
-            queryset = filtrar_queryset(queryset, self.request)
-            sucursal = self.request.query_params.get("sucursal")
-            if sucursal:
-                queryset = queryset.filter(id_orden__id_sucursal_id=sucursal)
-            return queryset
-        if alcance.es_personal:
-            return queryset.none()
-        try:
-            cliente = Cliente.objects.get(id_usuario=self.request.user)
-        except Cliente.DoesNotExist:
-            return queryset.none()
-        return queryset.filter(id_cliente=cliente)
-
-    @action(detail=False, methods=["post"], permission_classes=[IsCliente])
-    def solicitar(self, request):
-        """
-        Body: {
-          "id_orden": <int>,
-          "items": [{"id_orden_item": <int>, "cantidad": <int>, "motivo": "TALLA_INCORRECTA"}]
-        }
-        """
-        cliente = Cliente.objects.get(id_usuario=request.user)
-        id_orden = request.data.get("id_orden")
-        items = request.data.get("items", [])
-
-        if not id_orden:
-            return Response({"error": "Debe indicar la orden."}, status=400)
-        try:
-            orden = Order.objects.get(pk=id_orden, id_cliente=cliente)
-        except Order.DoesNotExist:
-            return Response({"error": "Orden no encontrada."}, status=400)
-
-        try:
-            devolucion, mensajes = DevolucionService.solicitar_devolucion(cliente, orden, items)
-        except ValueError as e:
-            return Response({"error": str(e)}, status=400)
-
-        return Response({
-            "devolucion": DevolucionSerializer(devolucion).data,
-            "mensajes": mensajes,
-        }, status=201)
-
-
 # NUEVO (SaaS - paso 6): sincronización de operaciones hechas sin conexión.
+# MODIFICADO (Fase 2 - CU08): historial con filtros, conflictos y resolución.
+ROLES_GESTION_SYNC = ("SUPER_ADMIN", "ADMIN_EMPRESA", "ENCARGADO_SUCURSAL")
+
+
 class SyncOperacionViewSet(ReadOnlyModelViewSet):
     """Operaciones sin conexión de la empresa del usuario.
 
-    GET  /api/sales/sync/                 -> historial (?estado=SINCRONIZADA|RECHAZADA)
+    GET  /api/sales/sync/                 -> historial (paginado). Filtros:
+         ?estado=SINCRONIZADA|EN_CONFLICTO|RECHAZADA
+         ?pendientes=1        (solo conflictos sin resolver)
+         ?tipo_conflicto=PRECIO|STOCK|PRECIO_Y_STOCK
+         ?sucursal=<id>  ?desde=AAAA-MM-DD  ?hasta=AAAA-MM-DD
+         El SUPER_ADMIN puede filtrar por empresa con ?empresa=<slug>.
+         El cajero solo ve sus propias operaciones.
+    GET  /api/sales/sync/resumen/         -> cantidades por estado y conflictos pendientes
     POST /api/sales/sync/ventas-pos/      -> sincroniza un lote de ventas POS
         Body: {"operaciones": [{
             "uuid": "<uuid generado en el dispositivo>",
             "fecha_operacion": "2026-10-27T15:30:00-04:00",
             "id_sucursal": <int>,
             "metodo_pago": "EFECTIVO" | "TARJETA" | "QR",
-            "items": [{"id_variante": <int>, "cantidad": <int>}]
+            "correo_cliente": "<opcional>",
+            "items": [{"id_variante": <int>, "cantidad": <int>, "precio_unitario": "<cobrado>"}]
         }]}
         Respuesta: un resultado por operación con estado SINCRONIZADA,
-        DUPLICADA o RECHAZADA (ver apps/sales/sync.py).
+        EN_CONFLICTO, DUPLICADA o RECHAZADA (ver apps/sales/sync.py).
+    POST /api/sales/sync/<id>/resolver/   -> resuelve un conflicto
+        Body: {"accion": "CONFIRMAR" | "DEVOLVER", "nota": "<opcional>"}
+        Solo SUPER_ADMIN, ADMIN_EMPRESA y ENCARGADO_SUCURSAL (ver apps/sales/conflictos.py).
     Disponible en los 3 planes (modo offline).
     """
 
     serializer_class = SyncOperacionSerializer
-    permission_classes = [IsCajero, requiere_funcion("modo_offline")]
+
+    def get_permissions(self):
+        """Resolver: encargado o superior; el resto, cualquier personal de caja."""
+        funcion_offline = requiere_funcion("modo_offline")()
+        if self.action == "resolver":
+            return [IsEncargadoSucursal(), funcion_offline]
+        return [IsCajero(), funcion_offline]
+
+    def _es_gestor(self):
+        """True si el usuario gestiona conflictos (no es solo cajero)."""
+        return self.request.user.roles.filter(nombre__in=ROLES_GESTION_SYNC).exists()
+
+    def _base(self):
+        """Operaciones visibles para el usuario (su empresa; el cajero, solo las suyas)."""
+        queryset = SyncOperacion.objects.select_related(
+            "id_usuario",
+            "revisada_por",
+            "id_venta__id_sucursal",
+            "id_venta__id_usuario",
+            "id_venta__id_cliente__id_usuario",
+            "id_venta__nota_devolucion__id_usuario",
+        ).filter(tipo="VENTA_POS")
+        queryset = filtrar_queryset(queryset, self.request)
+        if not self._es_gestor():
+            queryset = queryset.filter(id_usuario=self.request.user)
+        return queryset
 
     def get_queryset(self):
-        """Operaciones de la empresa del usuario, de la más reciente a la más antigua."""
-        queryset = SyncOperacion.objects.select_related("id_usuario", "id_venta").order_by(
-            "-fecha_recepcion"
-        )
-        queryset = filtrar_queryset(queryset, self.request)
-        estado = self.request.query_params.get("estado")
+        """Historial filtrado, de la operación más reciente a la más antigua."""
+        queryset = self._base().prefetch_related("id_venta__items__id_variante")
+        params = self.request.query_params
+        estado = params.get("estado")
         if estado:
             queryset = queryset.filter(estado=estado)
-        return queryset
+        if params.get("pendientes") in ("1", "true"):
+            queryset = queryset.filter(estado="EN_CONFLICTO", fecha_revision__isnull=True)
+        tipo_conflicto = params.get("tipo_conflicto")
+        if tipo_conflicto:
+            queryset = queryset.filter(tipo_conflicto=tipo_conflicto)
+        sucursal = params.get("sucursal")
+        if sucursal and str(sucursal).isdigit():
+            queryset = queryset.filter(
+                Q(id_venta__id_sucursal_id=int(sucursal)) | Q(datos__id_sucursal=int(sucursal))
+            )
+        desde = parse_date(params.get("desde") or "")
+        if desde:
+            queryset = queryset.filter(fecha_recepcion__date__gte=desde)
+        hasta = parse_date(params.get("hasta") or "")
+        if hasta:
+            queryset = queryset.filter(fecha_recepcion__date__lte=hasta)
+        return queryset.order_by("-fecha_recepcion")
+
+    @action(detail=False, methods=["get"])
+    def resumen(self, request):
+        """Cantidad de operaciones por estado y conflictos pendientes de resolver."""
+        base = self._base()
+        return Response({
+            "SINCRONIZADA": base.filter(estado="SINCRONIZADA").count(),
+            "EN_CONFLICTO": base.filter(estado="EN_CONFLICTO").count(),
+            "RECHAZADA": base.filter(estado="RECHAZADA").count(),
+            "pendientes": base.filter(estado="EN_CONFLICTO", fecha_revision__isnull=True).count(),
+        })
+
+    @action(detail=True, methods=["post"])
+    def resolver(self, request, pk=None):
+        """Confirma la venta en conflicto o devuelve el efectivo (con nota)."""
+        operacion = self.get_object()
+        accion = (request.data.get("accion") or "").strip().upper()
+        nota = request.data.get("nota")
+        try:
+            ConflictoService.resolver(operacion.pk, request.user, accion, nota)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return Response(self.get_serializer(self.get_queryset().get(pk=operacion.pk)).data)
 
     @action(detail=False, methods=["post"], url_path="ventas-pos")
     def ventas_pos(self, request):
@@ -526,7 +565,629 @@ class SyncOperacionViewSet(ReadOnlyModelViewSet):
             "resultados": resultados,
             "resumen": {
                 "SINCRONIZADA": resumen.get("SINCRONIZADA", 0),
+                "EN_CONFLICTO": resumen.get("EN_CONFLICTO", 0),
                 "DUPLICADA": resumen.get("DUPLICADA", 0),
                 "RECHAZADA": resumen.get("RECHAZADA", 0),
             },
         })
+
+
+# NUEVO (Fase 2 - CU05 / CU06): cambio de prenda por talla o color.
+ROLES_TIENDA_CAMBIOS = {"SUPER_ADMIN", "ADMIN_EMPRESA", "ENCARGADO_SUCURSAL", "CAJERO"}
+
+
+def _leer_mes(texto):
+    """(año, mes) de un texto AAAA-MM; por defecto el mes actual."""
+    hoy = timezone.localdate()
+    try:
+        anio, mes = (int(parte) for parte in str(texto).split("-"))
+        if 1 <= mes <= 12 and 2000 <= anio <= 2100:
+            return anio, mes
+    except (TypeError, ValueError):
+        pass
+    return hoy.year, hoy.month
+
+
+class CambioPrendaViewSet(ReadOnlyModelViewSet):
+    """Cambios de prenda por talla o color (CU05) y consulta del mes (CU06).
+
+    GET  /api/sales/cambios/                     -> lista. Filtros: ?estado= ?modalidad=
+         ?motivo= ?sucursal=<id> ?mes=AAAA-MM ?pendientes=1 (solicitados sin aprobar).
+         Personal: su empresa (SUPER_ADMIN: todas o ?empresa=<slug>).
+         Repartidor: solo los asignados a él. Cliente: solo los suyos.
+    GET  /api/sales/cambios/resumen-mes/?mes=AAAA-MM -> totales del mes (CU06).
+    GET  /api/sales/cambios/buscar-compra/?tipo=VENTA|PEDIDO&numero=<n> (personal)
+    GET  /api/sales/cambios/opciones/?id_venta_item=<id> | ?id_orden_item=<id>
+    POST /api/sales/cambios/solicitar/           (cliente, pedido con delivery)
+         {"id_orden_item", "motivo": "ERROR_TIENDA"|"NO_LE_QUEDA", "id_variante", "cantidad", "observacion"}
+    POST /api/sales/cambios/registrar-tienda/    (personal de la tienda)
+         {"id_venta_item"|"id_orden_item", "motivo", "id_variante", "cantidad",
+          "condiciones_ok": true, "observacion"}
+    POST /api/sales/cambios/<id>/aprobar/        (encargado) {"id_repartidor", "fecha_programada"}
+    POST /api/sales/cambios/<id>/rechazar/       (encargado) {"motivo"}
+    POST /api/sales/cambios/<id>/en-camino/      (repartidor asignado o encargado)
+    POST /api/sales/cambios/<id>/completar/      (repartidor asignado o encargado) {"condiciones_ok": true}
+    """
+
+    serializer_class = CambioPrendaSerializer
+
+    def get_permissions(self):
+        """Permiso según la acción."""
+        if self.action == "solicitar":
+            return [IsCliente()]
+        if self.action in ("registrar_tienda", "buscar_compra", "resumen_mes"):
+            return [IsCajero()]
+        if self.action in ("aprobar", "rechazar"):
+            return [IsEncargadoSucursal()]
+        if self.action in ("en_camino", "completar"):
+            return [IsRepartidor()]
+        return [IsAuthenticated()]
+
+    def _roles(self):
+        """Roles del usuario de la petición (se calculan una vez)."""
+        if not hasattr(self, "_roles_cache"):
+            self._roles_cache = set(self.request.user.roles.values_list("nombre", flat=True))
+        return self._roles_cache
+
+    def _cliente(self):
+        """Ficha de cliente del usuario (o None)."""
+        return Cliente.objects.filter(id_usuario=self.request.user).first()
+
+    def _base(self):
+        """Cambios visibles según el rol."""
+        queryset = CambioPrenda.objects.select_related(
+            "id_sucursal",
+            "id_cliente__id_usuario",
+            "id_venta_item",
+            "id_orden_item__id_orden__delivery",
+            "id_variante_devuelta__id_producto",
+            "id_variante_devuelta__id_talla",
+            "id_variante_devuelta__id_color",
+            "id_variante_entregada__id_producto",
+            "id_variante_entregada__id_talla",
+            "id_variante_entregada__id_color",
+            "id_repartidor",
+            "solicitado_por",
+            "aprobado_por",
+            "completado_por",
+        )
+        roles = self._roles()
+        if roles & ROLES_TIENDA_CAMBIOS:
+            return filtrar_queryset(queryset, self.request)
+        if "REPARTIDOR" in roles:
+            return filtrar_queryset(queryset, self.request).filter(id_repartidor=self.request.user)
+        if "CLIENTE" in roles:
+            cliente = self._cliente()
+            return queryset.filter(id_cliente=cliente) if cliente else queryset.none()
+        return queryset.none()
+
+    def get_queryset(self):
+        """Lista filtrada, del cambio más reciente al más antiguo."""
+        queryset = self._base()
+        params = self.request.query_params
+        for campo in ("estado", "modalidad", "motivo"):
+            valor = params.get(campo)
+            if valor:
+                queryset = queryset.filter(**{campo: valor})
+        sucursal = params.get("sucursal")
+        if sucursal and str(sucursal).isdigit():
+            queryset = queryset.filter(id_sucursal_id=int(sucursal))
+        if params.get("mes"):
+            anio, mes = _leer_mes(params.get("mes"))
+            queryset = queryset.filter(fecha_solicitud__year=anio, fecha_solicitud__month=mes)
+        if params.get("pendientes") in ("1", "true"):
+            queryset = queryset.filter(estado="SOLICITADO")
+        return queryset.order_by("-fecha_solicitud")
+
+    def _responder(self, cambio, status=200):
+        """Devuelve el cambio actualizado."""
+        cambio = self._base().get(pk=cambio.pk)
+        return Response(self.get_serializer(cambio).data, status=status)
+
+    def _empresa_del_personal(self):
+        """Empresa del personal (None para el SUPER_ADMIN)."""
+        alcance = alcance_de(self.request)
+        return None if alcance.super_admin else self.request.user.id_empresa_id
+
+    @action(detail=False, methods=["get"], url_path="resumen-mes")
+    def resumen_mes(self, request):
+        """CU06: cambios del mes por estado, motivo, modalidad, sucursal y prenda."""
+        anio, mes = _leer_mes(request.query_params.get("mes"))
+        cambios = self._base().filter(fecha_solicitud__year=anio, fecha_solicitud__month=mes)
+        sucursal = request.query_params.get("sucursal")
+        if sucursal and str(sucursal).isdigit():
+            cambios = cambios.filter(id_sucursal_id=int(sucursal))
+
+        def contar(campo):
+            """Cantidad de cambios agrupados por un campo."""
+            return {
+                fila[campo]: fila["total"]
+                for fila in cambios.values(campo).annotate(total=Count("id_cambio"))
+            }
+
+        prendas = (
+            cambios.exclude(estado="RECHAZADO")
+            .values(
+                "id_variante_devuelta__id_producto__nombre",
+                "id_variante_devuelta__id_talla__nombre",
+                "id_variante_devuelta__id_color__nombre",
+            )
+            .annotate(total=Count("id_cambio"))
+            .order_by("-total")[:5]
+        )
+        por_sucursal = (
+            cambios.values("id_sucursal__nombre").annotate(total=Count("id_cambio")).order_by("-total")
+        )
+        estados = contar("estado")
+        return Response({
+            "mes": f"{anio:04d}-{mes:02d}",
+            "total": cambios.count(),
+            "completados": estados.get("COMPLETADO", 0),
+            "en_proceso": sum(estados.get(e, 0) for e in ("SOLICITADO", "PROGRAMADO", "EN_CAMINO")),
+            "rechazados": estados.get("RECHAZADO", 0),
+            "por_estado": estados,
+            "por_motivo": contar("motivo"),
+            "por_modalidad": contar("modalidad"),
+            "por_sucursal": [
+                {"sucursal": fila["id_sucursal__nombre"], "total": fila["total"]} for fila in por_sucursal
+            ],
+            "prendas_mas_cambiadas": [
+                {
+                    "prenda": (
+                        f"{fila['id_variante_devuelta__id_producto__nombre']} - "
+                        f"{fila['id_variante_devuelta__id_talla__nombre']} - "
+                        f"{fila['id_variante_devuelta__id_color__nombre']}"
+                    ),
+                    "total": fila["total"],
+                }
+                for fila in prendas
+            ],
+        })
+
+    @action(detail=False, methods=["get"], url_path="buscar-compra")
+    def buscar_compra(self, request):
+        """Prendas de una venta POS o de un pedido de la empresa, con su elegibilidad."""
+        tipo = (request.query_params.get("tipo") or "").upper()
+        numero = request.query_params.get("numero")
+        if tipo not in ("VENTA", "PEDIDO") or not str(numero or "").isdigit():
+            return Response({"error": "Indica el tipo (venta o pedido) y su número."}, status=400)
+        if tipo == "VENTA":
+            compra = filtrar_queryset(
+                PosSale.objects.select_related("id_sucursal", "id_cliente__id_usuario"), request
+            ).filter(pk=int(numero)).first()
+            if compra is None:
+                return Response({"error": f"No existe la venta #{numero} en tu empresa."}, status=404)
+            items = compra.items.select_related(
+                "id_venta__id_sucursal", "id_variante__id_producto",
+                "id_variante__id_talla", "id_variante__id_color",
+            )
+            origenes = [OrigenCambio(venta_item=item) for item in items]
+            fecha, cliente, entrega = compra.fecha_venta, compra.id_cliente, "Venta en tienda"
+        else:
+            compra = filtrar_queryset(
+                Order.objects.select_related("id_sucursal", "id_cliente__id_usuario"), request
+            ).filter(pk=int(numero)).first()
+            if compra is None:
+                return Response({"error": f"No existe el pedido #{numero} en tu empresa."}, status=404)
+            items = OrderItem.objects.filter(id_orden=compra).select_related(
+                "id_orden__id_sucursal", "id_variante__id_producto",
+                "id_variante__id_talla", "id_variante__id_color",
+            )
+            origenes = [OrigenCambio(orden_item=item) for item in items]
+            fecha, cliente = compra.fecha_creacion, compra.id_cliente
+            entrega = compra.get_tipo_entrega_display()
+        return Response({
+            "tipo": tipo,
+            "numero": int(numero),
+            "etiqueta": f"{'Venta' if tipo == 'VENTA' else 'Pedido'} #{numero}",
+            "sucursal": compra.id_sucursal.nombre if compra.id_sucursal_id else None,
+            "fecha": fecha,
+            "entrega": entrega,
+            "cliente": (
+                {"nombre": f"{cliente.id_usuario.nombres} {cliente.id_usuario.apellidos}",
+                 "correo": cliente.id_usuario.correo}
+                if cliente else None
+            ),
+            "items": [
+                {
+                    "id_venta_item": origen.venta_item.pk if origen.venta_item else None,
+                    "id_orden_item": origen.orden_item.pk if origen.orden_item else None,
+                    "prenda": str(origen.variante),
+                    "cantidad": origen.cantidad,
+                    "precio": str(origen.variante.precio),
+                    "vence": origen.vence,
+                    "motivo_no_elegible": motivo_no_elegible(origen, "TIENDA"),
+                }
+                for origen in origenes
+            ],
+        })
+
+    @action(detail=False, methods=["get"])
+    def opciones(self, request):
+        """Tallas/colores disponibles para cambiar una prenda y si se puede cambiar."""
+        try:
+            origen = cargar_origen(
+                id_venta_item=request.query_params.get("id_venta_item"),
+                id_orden_item=request.query_params.get("id_orden_item"),
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=404)
+        roles = self._roles()
+        if roles & ROLES_TIENDA_CAMBIOS:
+            empresa_id = self._empresa_del_personal()
+            if empresa_id is not None and origen.empresa_id != empresa_id:
+                return Response({"error": "La prenda no existe."}, status=404)
+            modalidad = "TIENDA"
+        elif "CLIENTE" in roles:
+            cliente = self._cliente()
+            if cliente is None or origen.cliente is None or origen.cliente.pk != cliente.pk:
+                return Response({"error": "La prenda no existe."}, status=404)
+            modalidad = "DELIVERY"
+        else:
+            return Response({"error": "No tienes permiso."}, status=403)
+        return Response({
+            "prenda": str(origen.variante),
+            "id_variante": origen.variante.id_variante,
+            "talla": origen.variante.id_talla.nombre,
+            "color": origen.variante.id_color.nombre,
+            "precio": str(origen.variante.precio),
+            "cantidad": origen.cantidad,
+            "origen": origen.etiqueta,
+            "sucursal": origen.sucursal.nombre if origen.sucursal else None,
+            "vence": origen.vence,
+            "modalidad": modalidad,
+            "motivo_no_elegible": motivo_no_elegible(origen, modalidad),
+            "alternativas": alternativas(origen),
+        })
+
+    @action(detail=False, methods=["post"])
+    def solicitar(self, request):
+        """El cliente solicita el cambio de una prenda de su pedido con delivery."""
+        cliente = self._cliente()
+        if cliente is None:
+            return Response({"error": "Tu usuario no tiene ficha de cliente."}, status=400)
+        datos = request.data
+        try:
+            cambio = CambioService.solicitar(
+                request.user,
+                cliente,
+                datos.get("id_orden_item"),
+                datos.get("motivo"),
+                datos.get("id_variante"),
+                datos.get("cantidad", 1),
+                datos.get("observacion"),
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(cambio, status=201)
+
+    @action(detail=False, methods=["post"], url_path="registrar-tienda")
+    def registrar_tienda(self, request):
+        """El personal registra y completa un cambio en la tienda."""
+        datos = request.data
+        try:
+            cambio = CambioService.registrar_en_tienda(
+                request.user,
+                self._empresa_del_personal(),
+                datos.get("motivo"),
+                datos.get("id_variante"),
+                datos.get("cantidad", 1),
+                id_venta_item=datos.get("id_venta_item"),
+                id_orden_item=datos.get("id_orden_item"),
+                condiciones_ok=datos.get("condiciones_ok") is True,
+                observacion=datos.get("observacion"),
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(cambio, status=201)
+
+    @action(detail=True, methods=["post"])
+    def aprobar(self, request, pk=None):
+        """El encargado asigna repartidor y fecha de visita (dentro de 48 h)."""
+        cambio = self.get_object()
+        texto_fecha = request.data.get("fecha_programada")
+        fecha = parse_datetime(str(texto_fecha)) if texto_fecha else None
+        try:
+            cambio = CambioService.aprobar(cambio.pk, request.user, request.data.get("id_repartidor"), fecha)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(cambio)
+
+    @action(detail=True, methods=["post"])
+    def rechazar(self, request, pk=None):
+        """El encargado rechaza el cambio indicando el motivo."""
+        cambio = self.get_object()
+        try:
+            cambio = CambioService.rechazar(cambio.pk, request.user, request.data.get("motivo"))
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(cambio)
+
+    @action(detail=True, methods=["post"], url_path="en-camino")
+    def en_camino(self, request, pk=None):
+        """El repartidor sale a hacer el cambio."""
+        cambio = self.get_object()
+        try:
+            cambio = CambioService.en_camino(cambio.pk, request.user)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(cambio)
+
+    @action(detail=True, methods=["post"])
+    def completar(self, request, pk=None):
+        """El repartidor recogió la prenda devuelta y entregó la correcta."""
+        cambio = self.get_object()
+        try:
+            cambio = CambioService.completar(
+                cambio.pk, request.user, request.data.get("condiciones_ok") is True
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(cambio)
+
+
+# NUEVO (devoluciones)
+# MODIFICADO (Fase 2 - CU12): devolución con reembolso, recojo a domicilio y
+# nota de devolución. Reemplaza la devolución automática anterior.
+class DevolucionViewSet(ReadOnlyModelViewSet):
+    """Devoluciones de prendas con reembolso (CU12).
+
+    GET  /api/sales/devoluciones/                 -> lista. Filtros: ?estado= ?modalidad=
+         ?sucursal=<id> ?mes=AAAA-MM ?pendientes=1 (solicitadas sin aprobar).
+         Personal: su empresa (SUPER_ADMIN: todas o ?empresa=<slug>).
+         Repartidor: solo los recojos asignados. Cliente: solo las suyas.
+    GET  /api/sales/devoluciones/buscar-compra/?tipo=VENTA|PEDIDO&numero=<n>
+         Personal: compras de su empresa. Cliente: solo sus pedidos.
+    POST /api/sales/devoluciones/calcular/        -> montos sin guardar
+         {"tipo", "numero", "items": [{"id_item", "cantidad", "motivo"}]}
+    POST /api/sales/devoluciones/solicitar/       (cliente, pedido con delivery)
+         {"id_orden", "items": [{"id_item", "cantidad", "motivo"}], "observacion"}
+    POST /api/sales/devoluciones/registrar-tienda/ (personal de la tienda)
+         {"tipo", "numero", "items": [...], "condiciones_ok": true, "observacion"}
+    POST /api/sales/devoluciones/<id>/aprobar/    (encargado) {"id_repartidor", "fecha_programada"}
+    POST /api/sales/devoluciones/<id>/rechazar/   (encargado) {"motivo"}
+    POST /api/sales/devoluciones/<id>/en-camino/  (repartidor asignado o encargado)
+    POST /api/sales/devoluciones/<id>/completar/  (repartidor asignado o encargado) {"condiciones_ok": true}
+    Motivos: PRODUCTO_DANADO, ERROR_TIENDA (100% + envío), NO_LA_QUIERO (90%).
+    """
+
+    serializer_class = DevolucionSerializer
+
+    def get_permissions(self):
+        """Permiso según la acción."""
+        if self.action == "solicitar":
+            return [IsCliente()]
+        if self.action == "registrar_tienda":
+            return [IsCajero()]
+        if self.action in ("aprobar", "rechazar"):
+            return [IsEncargadoSucursal()]
+        if self.action in ("en_camino", "completar"):
+            return [IsRepartidor()]
+        return [IsAuthenticated()]
+
+    def _roles(self):
+        """Roles del usuario de la petición (se calculan una vez)."""
+        if not hasattr(self, "_roles_cache"):
+            self._roles_cache = set(self.request.user.roles.values_list("nombre", flat=True))
+        return self._roles_cache
+
+    def _cliente(self):
+        """Ficha de cliente del usuario (o None)."""
+        return Cliente.objects.filter(id_usuario=self.request.user).first()
+
+    def _empresa_del_personal(self):
+        """Empresa del personal (None para el SUPER_ADMIN)."""
+        alcance = alcance_de(self.request)
+        return None if alcance.super_admin else self.request.user.id_empresa_id
+
+    def _base(self):
+        """Devoluciones visibles según el rol."""
+        queryset = Devolucion.objects.select_related(
+            "id_sucursal",
+            "id_orden__id_sucursal",
+            "id_orden__delivery",
+            "id_cliente__id_usuario",
+            "id_repartidor",
+            "solicitado_por",
+            "aprobado_por",
+            "completado_por",
+        ).prefetch_related(
+            "items__id_orden_item__id_variante__id_producto",
+            "items__id_orden_item__id_variante__id_talla",
+            "items__id_orden_item__id_variante__id_color",
+            "items__id_venta_item__id_variante__id_producto",
+            "items__id_venta_item__id_variante__id_talla",
+            "items__id_venta_item__id_variante__id_color",
+        )
+        roles = self._roles()
+        if roles & ROLES_TIENDA_CAMBIOS:
+            return filtrar_queryset(queryset, self.request)
+        if "REPARTIDOR" in roles:
+            return filtrar_queryset(queryset, self.request).filter(id_repartidor=self.request.user)
+        if "CLIENTE" in roles:
+            cliente = self._cliente()
+            return queryset.filter(id_cliente=cliente) if cliente else queryset.none()
+        return queryset.none()
+
+    def get_queryset(self):
+        """Lista filtrada, de la devolución más reciente a la más antigua."""
+        queryset = self._base()
+        params = self.request.query_params
+        for campo in ("estado", "modalidad"):
+            valor = params.get(campo)
+            if valor:
+                queryset = queryset.filter(**{campo: valor})
+        sucursal = params.get("sucursal")
+        if sucursal and str(sucursal).isdigit():
+            queryset = queryset.filter(
+                Q(id_sucursal_id=int(sucursal))
+                | Q(id_sucursal__isnull=True, id_orden__id_sucursal_id=int(sucursal))
+            )
+        if params.get("mes"):
+            anio, mes = _leer_mes(params.get("mes"))
+            queryset = queryset.filter(fecha_creacion__year=anio, fecha_creacion__month=mes)
+        if params.get("pendientes") in ("1", "true"):
+            queryset = queryset.filter(estado="SOLICITADA")
+        return queryset.order_by("-fecha_creacion")
+
+    def _responder(self, devolucion, status=200):
+        """Devuelve la devolución actualizada."""
+        devolucion = self._base().get(pk=devolucion.pk)
+        return Response(self.get_serializer(devolucion).data, status=status)
+
+    def _cargar_compra(self, tipo, numero):
+        """Compra visible para el usuario: el personal, de su empresa; el cliente, sus pedidos."""
+        roles = self._roles()
+        if roles & ROLES_TIENDA_CAMBIOS:
+            return cargar_compra(tipo, numero, empresa_id=self._empresa_del_personal()), "TIENDA"
+        if "CLIENTE" in roles:
+            cliente = self._cliente()
+            if cliente is None:
+                raise ValueError("Tu usuario no tiene ficha de cliente.")
+            return cargar_compra(tipo, numero, cliente=cliente), "DELIVERY"
+        raise PermissionError("No tienes permiso.")
+
+    @action(detail=False, methods=["get"], url_path="buscar-compra")
+    def buscar_compra(self, request):
+        """Prendas de la compra con lo que se puede devolver de cada una."""
+        try:
+            compra, modalidad = self._cargar_compra(
+                request.query_params.get("tipo"), request.query_params.get("numero")
+            )
+        except PermissionError as e:
+            return Response({"error": str(e)}, status=403)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=404)
+        cliente = compra.cliente
+        problema_compra = compra.problema_compra(modalidad)
+        return Response({
+            "tipo": compra.tipo,
+            "numero": compra.numero,
+            "etiqueta": compra.etiqueta,
+            "sucursal": compra.sucursal.nombre if compra.sucursal else None,
+            "fecha": compra.fecha_base,
+            "vence": compra.vence,
+            "entrega": (
+                "Venta en tienda" if compra.tipo == "VENTA" else compra.orden.get_tipo_entrega_display()
+            ),
+            "costo_envio": compra.orden.costo_envio if compra.tipo == "PEDIDO" else None,
+            "envio_ya_devuelto": compra.envio_ya_devuelto(),
+            "metodo_reembolso": metodo_de_reembolso(compra),
+            "modalidad": modalidad,
+            "motivo_no_elegible": problema_compra,
+            "cliente": (
+                {"nombre": f"{cliente.id_usuario.nombres} {cliente.id_usuario.apellidos}",
+                 "correo": cliente.id_usuario.correo}
+                if cliente else None
+            ),
+            "porcentaje_retencion": PORCENTAJE_RETENCION,
+            "items": [
+                {
+                    "id_item": linea.pk,
+                    "prenda": str(linea.id_variante),
+                    "cantidad": linea.cantidad,
+                    "disponible": compra.disponible(linea),
+                    "precio_unitario": linea.precio_unitario,
+                    "motivo_no_elegible": problema_compra or compra.problema_linea(linea),
+                }
+                for linea in compra.lineas
+            ],
+        })
+
+    @action(detail=False, methods=["post"])
+    def calcular(self, request):
+        """Montos de la devolución antes de confirmarla (no guarda nada)."""
+        datos = request.data
+        try:
+            compra, modalidad = self._cargar_compra(datos.get("tipo"), datos.get("numero"))
+            problema = compra.problema_compra(modalidad)
+            if problema:
+                raise ValueError(problema)
+            montos = calcular_devolucion(compra, leer_items(compra, datos.get("items")))
+        except PermissionError as e:
+            return Response({"error": str(e)}, status=403)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        for fila in montos["items"]:
+            fila.pop("linea")
+        return Response(montos)
+
+    @action(detail=False, methods=["post"])
+    def solicitar(self, request):
+        """El cliente solicita la devolución de prendas de su pedido con delivery."""
+        cliente = self._cliente()
+        if cliente is None:
+            return Response({"error": "Tu usuario no tiene ficha de cliente."}, status=400)
+        datos = request.data
+        try:
+            devolucion = DevolucionService.solicitar(
+                request.user, cliente, datos.get("id_orden"), datos.get("items"),
+                datos.get("observacion"),
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(devolucion, status=201)
+
+    @action(detail=False, methods=["post"], url_path="registrar-tienda")
+    def registrar_tienda(self, request):
+        """El personal registra y completa una devolución en la tienda."""
+        datos = request.data
+        try:
+            devolucion = DevolucionService.registrar_en_tienda(
+                request.user,
+                self._empresa_del_personal(),
+                datos.get("tipo"),
+                datos.get("numero"),
+                datos.get("items"),
+                condiciones_ok=datos.get("condiciones_ok") is True,
+                observacion=datos.get("observacion"),
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(devolucion, status=201)
+
+    @action(detail=True, methods=["post"])
+    def aprobar(self, request, pk=None):
+        """El encargado asigna repartidor y fecha de recojo (dentro de 48 h)."""
+        devolucion = self.get_object()
+        texto_fecha = request.data.get("fecha_programada")
+        fecha = parse_datetime(str(texto_fecha)) if texto_fecha else None
+        try:
+            devolucion = DevolucionService.aprobar(
+                devolucion.pk, request.user, request.data.get("id_repartidor"), fecha
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(devolucion)
+
+    @action(detail=True, methods=["post"])
+    def rechazar(self, request, pk=None):
+        """El encargado rechaza la devolución indicando el motivo."""
+        devolucion = self.get_object()
+        try:
+            devolucion = DevolucionService.rechazar(devolucion.pk, request.user, request.data.get("motivo"))
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(devolucion)
+
+    @action(detail=True, methods=["post"], url_path="en-camino")
+    def en_camino(self, request, pk=None):
+        """El repartidor sale a recoger la prenda."""
+        devolucion = self.get_object()
+        try:
+            devolucion = DevolucionService.en_camino(devolucion.pk, request.user)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(devolucion)
+
+    @action(detail=True, methods=["post"])
+    def completar(self, request, pk=None):
+        """El repartidor recogió y revisó la prenda: se repone el stock y se reembolsa."""
+        devolucion = self.get_object()
+        try:
+            devolucion = DevolucionService.completar(
+                devolucion.pk, request.user, request.data.get("condiciones_ok") is True
+            )
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+        return self._responder(devolucion)

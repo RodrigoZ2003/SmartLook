@@ -1,0 +1,41 @@
+<div class="pago-reserva">
+  <div class="pago-head">
+    <h3>Pagar la Reserva #{{ reserva?.id_reserva }}</h3>
+    <span class="limite" *ngIf="reserva?.fecha_limite_pago">
+      Paga antes de las {{ reserva.fecha_limite_pago | date:'HH:mm' }} del {{ reserva.fecha_limite_pago | date:'dd/MM/yyyy' }}
+    </span>
+  </div>
+
+  <p class="total">Total de las prendas: <strong>Bs {{ reserva?.monto_total | number:'1.2-2' }}</strong></p>
+
+  <div class="opciones">
+    <label *ngFor="let o of opciones" [class.selected]="tipoPago === o.tipo">
+      <input type="radio" name="tipoPago" [value]="o.tipo" [(ngModel)]="tipoPago" [disabled]="pagando" />
+      <span class="opcion-texto">{{ etiqueta(o) }}</span>
+      <strong>Bs {{ o.monto | number:'1.2-2' }}</strong>
+    </label>
+  </div>
+
+  <p class="saldo" *ngIf="saldoAlRetirar > 0">
+    El saldo de Bs {{ saldoAlRetirar | number:'1.2-2' }} se paga al retirar en la tienda o en el checkout del delivery.
+  </p>
+
+  <p class="reglas">
+    La prenda se aparta recién cuando se confirma el pago. Si no la retiras dentro de la semana siguiente
+    a la fecha reservada, o si cancelas la reserva, se te devuelve lo pagado menos el
+    {{ reserva?.porcentaje_retencion }}% del total.
+  </p>
+
+  <label class="tarjeta-label">Datos de la tarjeta</label>
+  <div #tarjeta class="tarjeta"></div>
+  <p class="tarjeta-hint">Tarjeta de prueba: 4242 4242 4242 4242, cualquier fecha futura y CVC.</p>
+
+  <p class="error" *ngIf="error">{{ error }}</p>
+
+  <div class="acciones">
+    <button type="button" class="btn-link" [disabled]="pagando" (click)="cerrar.emit()">Pagar después</button>
+    <button type="button" class="btn btn-accent" [disabled]="pagando || opciones.length === 0" (click)="pagar()">
+      {{ pagando ? 'Procesando pago...' : 'Pagar Bs ' + (montoElegido | number:'1.2-2') }}
+    </button>
+  </div>
+</div>

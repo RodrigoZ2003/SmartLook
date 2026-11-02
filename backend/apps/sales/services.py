@@ -1,15 +1,59 @@
 # backend/apps/sales/services.py
+# MODIFICADO (Fase 2 - reservas con anticipo): en el checkout y en el POS, las
+# prendas de una reserva pagada cobran solo el SALDO (precio total congelado
+# menos lo pagado al reservar) y la reserva se retira COMPLETA (todas sus
+# prendas pendientes juntas). Se quitó la devolución automática anterior
+# (DevolucionService), reemplazada por apps/sales/devoluciones.py (CU12).
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Sum
 from apps.inventory.services import StockService
 from apps.inventory.models import StockItem
 from apps.catalog.models import ProductoVariante
 from common.utils import log_audit
-from .models import Cart, Delivery, Order, OrderItem, PosSale, PosSaleItem, Devolucion, DevolucionItem
+from .models import Cart, Delivery, Order, OrderItem, PosSale, PosSaleItem
 from .integrations.stripe_payment import crear_intento_pago, verificar_pago, PagoRechazadoError
 from .integrations.envio import cotizar, EnvioError
+
+
+def precio_reservado(item_reserva):
+    """Precio de una prenda reservada: el congelado al reservar o, si no tiene, el actual."""
+    if item_reserva.precio_unitario is not None:
+        return item_reserva.precio_unitario
+    return item_reserva.id_variante.precio
+
+
+def validar_retiro_completo(items_reserva):
+    """Agrupa las prendas reservadas por reserva y valida que se retire cada una completa.
+
+    items_reserva: FittingReservationItem que se van a cobrar.
+    Devuelve el saldo total a cobrar por esas reservas: precio total
+    congelado menos lo pagado al reservar (las reservas anteriores sin pago
+    cobran el precio de sus prendas).
+    """
+    reservas = {}
+    for item in items_reserva:
+        reservas.setdefault(item.id_reserva_id, (item.id_reserva, set()))[1].add(item.pk)
+    total = Decimal("0")
+    for reserva, elegidas in reservas.values():
+        if reserva.estado != "CONFIRMADA":
+            raise ValueError(
+                f"La reserva #{reserva.id_reserva} no está confirmada "
+                f"({reserva.get_estado_display().lower()})."
+            )
+        pendientes = set(reserva.items.filter(estado="PENDIENTE").values_list("pk", flat=True))
+        if pendientes != elegidas:
+            raise ValueError(
+                f"La reserva #{reserva.id_reserva} se retira completa: incluye todas sus prendas."
+            )
+        if reserva.monto_total is not None:
+            total += reserva.saldo
+        else:
+            total += sum(
+                precio_reservado(item) for item in reserva.items.select_related("id_variante")
+                if item.pk in elegidas
+            )
+    return total
 
 
 class CartService:
@@ -47,7 +91,6 @@ class CartService:
             queryset = queryset.select_for_update()
         return queryset.order_by("-fecha_actualizacion").first()
 
-
 class CheckoutService:
     @staticmethod
     def iniciar_checkout(cliente, sucursal, tipo_entrega="RETIRO", entrega=None):
@@ -69,7 +112,9 @@ class CheckoutService:
                 f"No tienes prendas de {sucursal.id_empresa.nombre} en tu carrito."
             )
 
-        items = list(cart.cartitem_set.select_related("id_variante"))
+        items = list(cart.cartitem_set.select_related(
+            "id_variante", "id_reserva_item__id_reserva", "id_reserva_item__id_variante"
+        ))
 
         for item in items:
             if item.id_reserva_item_id:
@@ -82,7 +127,14 @@ class CheckoutService:
                     f"Stock insuficiente de '{item.id_variante}' en {sucursal.nombre}."
                 )
 
-        subtotal = sum(item.id_variante.precio * item.cantidad for item in items)
+        # MODIFICADO (Fase 2): las prendas reservadas cobran solo el saldo de su
+        # reserva (que se retira completa); las demás, su precio actual.
+        saldo_reservas = validar_retiro_completo(
+            [item.id_reserva_item for item in items if item.id_reserva_item_id]
+        )
+        subtotal = saldo_reservas + sum(
+            item.id_variante.precio * item.cantidad for item in items if not item.id_reserva_item_id
+        )
         costo_envio = Decimal("0.00")
         cotizacion = None
 
@@ -107,6 +159,8 @@ class CheckoutService:
             costo_envio = cotizacion["costo_envio"]
 
         total = subtotal + costo_envio
+        if total <= 0:
+            raise ValueError("No hay saldo por pagar: la reserva ya está pagada; retírala en la tienda.")
 
         try:
             payment_intent_id, client_secret = crear_intento_pago(total)
@@ -156,16 +210,24 @@ class CheckoutService:
         if not cart or not cart.cartitem_set.exists():
             raise ValueError("El carrito ya no tiene items para completar la orden.")
 
-        items = list(cart.cartitem_set.select_related("id_variante", "id_reserva_item"))
+        items = list(cart.cartitem_set.select_related(
+            "id_variante", "id_reserva_item__id_reserva", "id_reserva_item__id_variante"
+        ))
+        validar_retiro_completo([item.id_reserva_item for item in items if item.id_reserva_item_id])
 
         items_reserva_comprados = []
         for item in items:
+            # MODIFICADO (Fase 2): la prenda reservada guarda su precio congelado.
+            precio = (
+                precio_reservado(item.id_reserva_item) if item.id_reserva_item_id
+                else item.id_variante.precio
+            )
             OrderItem.objects.create(
                 id_orden=order,
                 id_variante=item.id_variante,
                 cantidad=item.cantidad,
-                precio_unitario=item.id_variante.precio,
-                subtotal=item.id_variante.precio * item.cantidad,
+                precio_unitario=precio,
+                subtotal=precio * item.cantidad,
             )
             if item.id_reserva_item_id:
                 items_reserva_comprados.append(item.id_reserva_item)
@@ -203,7 +265,6 @@ class CheckoutService:
         )
         return order
 
-
 class PosSaleService:
     @staticmethod
     @transaction.atomic
@@ -213,6 +274,9 @@ class PosSaleService:
         {"id_variante": <int>, "cantidad": <int>} para prendas normales,
         o {"id_reserva_item": <int>, "cantidad": 1} para prendas que
         vienen de una reserva confirmada.
+
+        MODIFICADO (Fase 2): de una reserva pagada se cobra solo el saldo y
+        se retira completa (todas sus prendas pendientes en la misma venta).
         """
         if not items_data:
             raise ValueError("La venta debe tener al menos una prenda.")
@@ -260,7 +324,12 @@ class PosSaleService:
                 return reserva_items[item["id_reserva_item"]].id_variante
             return variantes[item["id_variante"]]
 
-        total = sum(_variante_de(item).precio * item.get("cantidad", 1) for item in items_data)
+        saldo_reservas = validar_retiro_completo(list(reserva_items.values()))
+        total = saldo_reservas + sum(
+            _variante_de(item).precio * item.get("cantidad", 1)
+            for item in items_data
+            if not item.get("id_reserva_item")
+        )
 
         venta = PosSale.objects.create(
             id_sucursal=sucursal,
@@ -275,12 +344,16 @@ class PosSaleService:
             id_reserva_item = item.get("id_reserva_item")
             cantidad = item.get("cantidad", 1)
 
+            precio = (
+                precio_reservado(reserva_items[id_reserva_item]) if id_reserva_item
+                else variante.precio
+            )
             PosSaleItem.objects.create(
                 id_venta=venta,
                 id_variante=variante,
                 cantidad=cantidad,
-                precio_unitario=variante.precio,
-                subtotal=variante.precio * cantidad,
+                precio_unitario=precio,
+                subtotal=precio * cantidad,
                 id_reserva_item=reserva_items.get(id_reserva_item) if id_reserva_item else None,
             )
 
@@ -311,111 +384,3 @@ class PosSaleService:
             ),
         )
         return venta
-
-
-# NUEVO (devoluciones): mensaje de disculpa que se le muestra al cliente
-# según el motivo - vive en el backend para que web y mobile no tengan
-# cada uno su propia copia del texto (una sola fuente de verdad).
-MOTIVO_MENSAJES = {
-    "TALLA_INCORRECTA": (
-        "Lamentamos el inconveniente, nos equivocamos con la talla. Ya "
-        "estamos solucionando esto y te contactaremos para coordinar el cambio."
-    ),
-    "COLOR_INCORRECTO": (
-        "Lamentamos el inconveniente, nos equivocamos con el color. Ya "
-        "estamos solucionando esto y te contactaremos para coordinar el cambio."
-    ),
-    "PRODUCTO_DANADO": (
-        "Lamentamos que la prenda haya llegado dañada. Ya estamos "
-        "solucionando esto y te contactaremos a la brevedad."
-    ),
-    "OTRO": (
-        "Lamentamos el inconveniente. Ya estamos revisando tu caso y te "
-        "contactaremos a la brevedad."
-    ),
-}
-
-
-class DevolucionService:
-    @staticmethod
-    @transaction.atomic
-    def solicitar_devolucion(cliente, orden, items_data):
-        """
-        Devolución de prendas de un pedido con delivery ya entregado (ej.
-        la sucursal se equivocó de talla/color). items_data: lista de
-        {"id_orden_item": <int>, "cantidad": <int>, "motivo": <str>}.
-
-        Se completa sola (sin aprobación de un encargado): valida que la
-        orden sea DELIVERY, esté ENTREGADA y sea del cliente, repone
-        stock (ENTRADA) en la sucursal que despachó la orden por cada
-        prenda devuelta, y devuelve los mensajes de disculpa según el
-        motivo de cada una para mostrarlos directo en la app/web.
-        """
-        if orden.id_cliente_id != cliente.id_cliente:
-            raise ValueError("Esta orden no te pertenece.")
-        if orden.tipo_entrega != "DELIVERY":
-            raise ValueError("Solo se pueden devolver pedidos con delivery.")
-        if orden.estado != "ENTREGADA":
-            raise ValueError("Solo se puede devolver un pedido ya entregado.")
-        if not items_data:
-            raise ValueError("Debe indicar al menos una prenda a devolver.")
-
-        devolucion = Devolucion.objects.create(id_orden=orden, id_cliente=cliente)
-        mensajes = []
-
-        for item in items_data:
-            try:
-                orden_item = OrderItem.objects.select_related("id_variante").get(
-                    pk=item.get("id_orden_item"), id_orden=orden
-                )
-            except OrderItem.DoesNotExist:
-                raise ValueError(
-                    f"La prenda con id {item.get('id_orden_item')} no pertenece a esta orden."
-                )
-
-            cantidad = int(item.get("cantidad") or 1)
-            motivo = item.get("motivo")
-            if motivo not in MOTIVO_MENSAJES:
-                raise ValueError(f"Motivo de devolución inválido: {motivo}")
-            if cantidad < 1:
-                raise ValueError("La cantidad a devolver debe ser al menos 1.")
-
-            ya_devuelto = DevolucionItem.objects.filter(
-                id_orden_item=orden_item
-            ).aggregate(total=Sum("cantidad"))["total"] or 0
-            if ya_devuelto + cantidad > orden_item.cantidad:
-                raise ValueError(
-                    f"Ya devolviste {ya_devuelto} de {orden_item.cantidad} unidad(es) de "
-                    f"'{orden_item.id_variante}'; no puedes devolver {cantidad} más."
-                )
-
-            DevolucionItem.objects.create(
-                id_devolucion=devolucion,
-                id_orden_item=orden_item,
-                cantidad=cantidad,
-                motivo=motivo,
-            )
-
-            StockService.registrar_movimiento(
-                sucursal=orden.id_sucursal,
-                variante=orden_item.id_variante,
-                usuario=cliente.id_usuario,
-                tipo="ENTRADA",
-                cantidad=cantidad,
-                motivo=f"Devolución Orden #{orden.id_orden} (Devolución #{devolucion.id_devolucion})",
-            )
-
-            mensajes.append(MOTIVO_MENSAJES[motivo])
-
-        log_audit(
-            usuario=cliente.id_usuario,
-            accion="DEVOLUCION_SOLICITADA",
-            tabla_afectada="devolucion",
-            registro_id=devolucion.id_devolucion,
-            descripcion=(
-                f"{cliente.id_usuario.nombres} {cliente.id_usuario.apellidos} solicitó "
-                f"una devolución de la Orden #{orden.id_orden} - Devolución #{devolucion.id_devolucion}"
-            ),
-        )
-
-        return devolucion, mensajes

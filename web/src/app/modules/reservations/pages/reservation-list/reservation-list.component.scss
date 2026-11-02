@@ -3,21 +3,25 @@
   max-width: 900px;
   margin: 0 auto;
 }
+
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
+
   h2 {
     color: #1a1a2e;
     margin: 0;
   }
 }
+
 .empty-state {
   text-align: center;
   color: #999;
   padding: 3rem;
 }
+
 .reserva-card {
   background: white;
   border-radius: 8px;
@@ -25,82 +29,195 @@
   padding: 1.25rem;
   margin-bottom: 1rem;
 }
+
 .reserva-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 0.75rem;
+
   strong {
     display: block;
     color: #1a1a2e;
   }
+
+  .numero {
+    display: block;
+    font-size: 0.75rem;
+    color: #999;
+  }
+
   .sucursal {
     color: #666;
     font-size: 0.9rem;
   }
 }
+
 .estado-badge {
   padding: 0.3rem 0.7rem;
   border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
+
   &.estado-pendiente {
     background: #fff3cd;
     color: #856404;
   }
+
   &.estado-confirmada {
     background: #d1ecf1;
     color: #0c5460;
   }
+
   &.estado-completada {
     background: #e8f5e9;
     color: #4caf50;
   }
+
   &.estado-cancelada {
     background: #fdecea;
     color: #f44336;
   }
+
+  // NUEVO (Fase 2)
+  &.estado-pendiente_pago {
+    background: #fff3e0;
+    color: #e65100;
+  }
+
+  &.estado-vencida {
+    background: #eceff1;
+    color: #546e7a;
+  }
 }
+
 .reserva-body {
   p {
     margin: 0.3rem 0;
     color: #444;
   }
+
   .items-label {
     margin-top: 0.6rem;
   }
+
   .items-list {
     margin: 0.2rem 0 0;
     padding-left: 1.2rem;
     color: #666;
   }
 }
+
+// NUEVO (Fase 2): pago, saldo, plazos y nota de devolución
+.montos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  background: #f8f8f8;
+  border-radius: 6px;
+
+  div {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8rem;
+    color: #666;
+  }
+
+  strong {
+    font-size: 0.95rem;
+    color: #1a1a2e;
+  }
+}
+
+.plazo {
+  font-size: 0.85rem;
+  color: #555;
+
+  &.plazo--pago {
+    color: #8a4b00;
+  }
+}
+
+.nota {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px dashed #c0c0c0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #444;
+
+  strong {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: #1a1a2e;
+  }
+
+  div {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.15rem 0;
+  }
+
+  .nota-devuelto {
+    font-weight: 700;
+    color: #1b5e20;
+  }
+
+  small {
+    color: #999;
+  }
+}
+
+.motivo {
+  font-size: 0.85rem;
+  color: #777;
+  font-style: italic;
+}
+
+app-pago-reserva {
+  display: block;
+  margin-top: 1rem;
+}
+
 .reserva-actions {
   display: flex;
   gap: 0.75rem;
   margin-top: 1rem;
   justify-content: flex-end;
 }
+
 .btn-link {
   background: none;
   border: none;
   cursor: pointer;
   font-size: 0.9rem;
+
   &.btn-danger {
     color: #f44336;
   }
 }
+
 .alert {
   padding: 0.8rem;
   border-radius: 6px;
   margin-bottom: 1rem;
   font-size: 0.9rem;
+
   &.alert-error {
     background: #fdecea;
     color: #f44336;
   }
+
+  &.alert-success {
+    background: #e8f5e9;
+    color: #1b5e20;
+  }
 }
+
 // NUEVO (A.5): reservas guardadas sin conexión
 .cola {
   background: white;
@@ -109,27 +226,32 @@
   padding: 1.25rem;
   margin-bottom: 1.5rem;
   border-left: 4px solid #e65100;
+
   .cola-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+
     h3 {
       color: #1a1a2e;
       margin: 0;
     }
+
     .cola-acciones {
       display: flex;
       gap: 0.5rem;
       flex-wrap: wrap;
     }
   }
+
   .cola-resumen {
     font-size: 0.85rem;
     color: #666;
     margin: 0.5rem 0;
   }
+
   .sync-resultado {
     font-size: 0.85rem;
     padding: 0.6rem 0.8rem;
@@ -137,18 +259,21 @@
     background: #e8f5e9;
     color: #1b5e20;
     margin-bottom: 0.75rem;
+
     &.sync-resultado--error {
       background: #fdecea;
       color: #8e2a20;
     }
   }
 }
+
 .cola-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.7rem 0;
   border-top: 1px solid #f0f0f0;
+
   .cola-info {
     flex: 1;
     display: flex;
@@ -156,22 +281,27 @@
     gap: 0.15rem;
     font-size: 0.85rem;
     color: #555;
+
     strong {
       color: #1a1a2e;
     }
+
     .prendas {
       color: #777;
     }
+
     .codigo {
       font-family: monospace;
       font-size: 0.7rem;
       color: #999;
       word-break: break-all;
     }
+
     .motivo {
       color: #c0392b;
     }
   }
+
   .estado {
     padding: 0.15rem 0.6rem;
     border-radius: 999px;
@@ -180,28 +310,34 @@
     font-size: 0.75rem;
     font-weight: 700;
     white-space: nowrap;
+
     &.estado--enviada {
       background: #e3f2fd;
       color: #0d47a1;
     }
+
     &.estado--confirmada {
       background: #e8f5e9;
       color: #1b5e20;
     }
+
     &.estado--rechazada {
       background: #fdecea;
       color: #c0392b;
     }
   }
 }
+
 @media (max-width: 640px) {
   .reservations-container {
     padding: 1rem;
   }
+
   .header {
     flex-wrap: wrap;
     gap: 0.75rem;
   }
+
   .cola-item {
     flex-wrap: wrap;
   }

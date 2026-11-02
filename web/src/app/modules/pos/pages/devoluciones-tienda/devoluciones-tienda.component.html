@@ -1,0 +1,315 @@
+<!-- web/src/app/modules/pos/pages/devoluciones-tienda/devoluciones-tienda.component.html -->
+<!-- NUEVO (Fase 2 - CU12): devolución de prendas con reembolso y nota de devolución -->
+<div class="devol-container">
+  <div class="cabecera">
+    <div>
+      <h2>Devoluciones</h2>
+      <p class="subtitulo">Devolución dentro de los 7 días con reembolso y nota de devolución.</p>
+    </div>
+    <a routerLink="/pos" class="btn-volver">Volver al Punto de Venta</a>
+  </div>
+
+  <div class="pestanas">
+    <button type="button" [class.activa]="pestana === 'SEGUIMIENTO'" (click)="cambiarPestana('SEGUIMIENTO')">Seguimiento</button>
+    <button type="button" [class.activa]="pestana === 'TIENDA'" (click)="cambiarPestana('TIENDA')">Registrar en tienda</button>
+    <button type="button" [class.activa]="pestana === 'MES'" (click)="cambiarPestana('MES')">Historial del mes</button>
+  </div>
+
+  <p class="aviso aviso--ok" *ngIf="mensaje">{{ mensaje }}</p>
+  <p class="aviso aviso--error" *ngIf="error">{{ error }}</p>
+
+  <!-- ============================================================ SEGUIMIENTO -->
+  <section *ngIf="pestana === 'SEGUIMIENTO'">
+    <div class="filtros">
+      <button type="button" *ngFor="let e of estados" class="chip" [class.activa]="filtroEstado === e.valor"
+              (click)="filtrarEstado(e.valor)">{{ e.texto }}</button>
+      <select [(ngModel)]="filtroModalidad" (change)="cargarSeguimiento()" aria-label="Modalidad">
+        <option value="">Tienda y recojo</option>
+        <option value="DELIVERY">Solo con recojo</option>
+        <option value="TIENDA">Solo en tienda</option>
+      </select>
+    </div>
+
+    <div class="vacio" *ngIf="cargando">Cargando...</div>
+    <div class="vacio" *ngIf="!cargando && devoluciones.length === 0">No hay devoluciones en esta lista.</div>
+
+    <div class="devol" *ngFor="let d of devoluciones" [class.devol--atrasada]="d.atrasado">
+      <div class="devol-cabecera">
+        <div>
+          <strong>{{ d.numero_nota }}</strong>
+          <span class="muted">{{ d.origen?.etiqueta }} · {{ d.sucursal }} · {{ d.modalidad_display || 'Anterior' }}</span>
+        </div>
+        <span class="estado" [ngClass]="claseEstado(d)">{{ d.estado_display }}</span>
+      </div>
+      <div class="devol-cuerpo">
+        <p><strong>Cliente:</strong> {{ d.cliente || 'Sin cliente' }}
+          <span *ngIf="d.cliente_contacto?.telefono"> · Tel. {{ d.cliente_contacto.telefono }}</span></p>
+        <ul class="prendas">
+          <li *ngFor="let i of d.items">
+            {{ i.cantidad }} x {{ i.variante }} <span class="muted">({{ i.motivo_display }})</span>
+            <span class="monto" *ngIf="i.monto_reembolso">devuelve Bs {{ i.monto_reembolso }}</span>
+          </li>
+        </ul>
+        <p class="reembolso" *ngIf="!d.es_anterior">{{ d.resumen_reembolso }}</p>
+        <p *ngIf="d.entrega"><strong>Dirección:</strong> {{ d.entrega.direccion }}
+          <span *ngIf="d.entrega.referencia">({{ d.entrega.referencia }})</span></p>
+        <p *ngIf="d.observacion"><strong>Observación:</strong> {{ d.observacion }}</p>
+        <p *ngIf="d.repartidor"><strong>Repartidor:</strong> {{ d.repartidor }} ·
+          recojo {{ d.fecha_programada | date:'dd/MM/yyyy HH:mm' }} ·
+          límite {{ d.fecha_limite | date:'dd/MM/yyyy HH:mm' }}
+          <span class="tag-atrasado" *ngIf="d.atrasado">Atrasado</span></p>
+        <p *ngIf="d.motivo_rechazo" class="rechazo"><strong>Rechazada:</strong> {{ d.motivo_rechazo }}</p>
+        <p class="muted">Solicitada el {{ d.fecha_creacion | date:'dd/MM/yyyy HH:mm' }}
+          <span *ngIf="d.solicitado_por"> por {{ d.solicitado_por }}</span></p>
+      </div>
+
+      <div class="devol-acciones">
+        <button type="button" class="btn-sec" (click)="verNota(d)">Ver nota de devolución</button>
+        <ng-container *ngIf="esGestor && d.estado === 'SOLICITADA' && accion?.id !== d.id_devolucion">
+          <button type="button" class="btn-main" (click)="abrirAccion(d, 'APROBAR')">Aprobar y asignar repartidor</button>
+          <button type="button" class="btn-peligro" (click)="abrirAccion(d, 'RECHAZAR')">Rechazar</button>
+        </ng-container>
+        <button type="button" class="btn-peligro"
+                *ngIf="esGestor && (d.estado === 'PROGRAMADA' || d.estado === 'EN_CAMINO') && accion?.id !== d.id_devolucion"
+                (click)="abrirAccion(d, 'RECHAZAR')">Rechazar</button>
+      </div>
+
+      <!-- Aprobar: repartidor y fecha de recojo -->
+      <div class="panel-accion" *ngIf="accion?.id === d.id_devolucion && accion?.tipo === 'APROBAR'">
+        <div class="campo">
+          <label [attr.for]="'rep-' + d.id_devolucion">Repartidor</label>
+          <select [id]="'rep-' + d.id_devolucion" [(ngModel)]="aprobacion.id_repartidor">
+            <option [ngValue]="null">-- Elige --</option>
+            <option *ngFor="let r of repartidores" [ngValue]="r.id_usuario">{{ r.nombre }}</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label [attr.for]="'fecha-' + d.id_devolucion">Fecha y hora del recojo (máximo 48 h)</label>
+          <input [id]="'fecha-' + d.id_devolucion" type="datetime-local" [(ngModel)]="aprobacion.fecha"
+                 [min]="fechaMinima" [max]="fechaMaxima" />
+        </div>
+        <p class="nota-stock">El reembolso y la reposición del stock se hacen cuando el repartidor complete el recojo.</p>
+        <div class="botones">
+          <button type="button" class="btn-main" [disabled]="procesando" (click)="aprobar(d)">
+            {{ procesando ? 'Guardando...' : 'Confirmar recojo' }}
+          </button>
+          <button type="button" class="btn-sec" [disabled]="procesando" (click)="cerrarAccion()">Cancelar</button>
+        </div>
+      </div>
+
+      <!-- Rechazar -->
+      <div class="panel-accion" *ngIf="accion?.id === d.id_devolucion && accion?.tipo === 'RECHAZAR'">
+        <div class="campo campo--ancho">
+          <label [attr.for]="'rech-' + d.id_devolucion">Motivo del rechazo</label>
+          <input [id]="'rech-' + d.id_devolucion" type="text" [(ngModel)]="motivoRechazo"
+                 placeholder="Ej.: la prenda tiene uso / fuera de plazo" />
+        </div>
+        <div class="botones">
+          <button type="button" class="btn-peligro" [disabled]="procesando" (click)="rechazar(d)">
+            {{ procesando ? 'Guardando...' : 'Confirmar rechazo' }}
+          </button>
+          <button type="button" class="btn-sec" [disabled]="procesando" (click)="cerrarAccion()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ REGISTRAR EN TIENDA -->
+  <section *ngIf="pestana === 'TIENDA'">
+    <form class="buscador" (ngSubmit)="buscarCompra()">
+      <select name="tipo" [(ngModel)]="tipoCompra" aria-label="Tipo de compra">
+        <option value="VENTA">Venta en tienda (POS)</option>
+        <option value="PEDIDO">Pedido en línea</option>
+      </select>
+      <input name="numero" type="number" min="1" [(ngModel)]="numeroCompra" placeholder="Número (ej.: 14)" />
+      <button type="submit" class="btn-main" [disabled]="buscandoCompra">
+        {{ buscandoCompra ? 'Buscando...' : 'Buscar' }}
+      </button>
+    </form>
+
+    <div class="compra" *ngIf="compra">
+      <h3>{{ compra.etiqueta }} · {{ compra.sucursal }}</h3>
+      <p class="muted">{{ compra.fecha | date:'dd/MM/yyyy HH:mm' }} · {{ compra.entrega }}
+        <span *ngIf="compra.cliente"> · Cliente: {{ compra.cliente.nombre }}</span>
+        · Plazo hasta el {{ compra.vence | date:'dd/MM/yyyy HH:mm' }}</p>
+      <p class="aviso aviso--error" *ngIf="compra.motivo_no_elegible">{{ compra.motivo_no_elegible }}</p>
+
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Prenda</th>
+            <th>Precio</th>
+            <th>Se puede devolver</th>
+            <th>Cantidad</th>
+            <th>Motivo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let i of compra.items" [class.seleccionada]="seleccion[i.id_item]?.incluir">
+            <td>
+              <input type="checkbox" *ngIf="!i.motivo_no_elegible" [(ngModel)]="seleccion[i.id_item].incluir"
+                     (ngModelChange)="recalcular()" [attr.aria-label]="'Devolver ' + i.prenda" />
+            </td>
+            <td>{{ i.prenda }}</td>
+            <td>Bs {{ i.precio_unitario }}</td>
+            <td>
+              <span *ngIf="!i.motivo_no_elegible">{{ i.disponible }} de {{ i.cantidad }}</span>
+              <span class="no-elegible" *ngIf="i.motivo_no_elegible">{{ i.motivo_no_elegible }}</span>
+            </td>
+            <td>
+              <input type="number" min="1" [max]="i.disponible" class="input-cantidad"
+                     *ngIf="!i.motivo_no_elegible && i.disponible > 1"
+                     [(ngModel)]="seleccion[i.id_item].cantidad" (ngModelChange)="recalcular()" />
+              <span *ngIf="!i.motivo_no_elegible && i.disponible <= 1">1</span>
+            </td>
+            <td>
+              <select *ngIf="!i.motivo_no_elegible" [(ngModel)]="seleccion[i.id_item].motivo"
+                      (ngModelChange)="recalcular()" [attr.aria-label]="'Motivo ' + i.prenda">
+                <option *ngFor="let m of motivos" [value]="m.valor">{{ m.texto }}</option>
+              </select>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="ayuda">Dañada u otra prenda: se devuelve el 100% (y el envío, si fue con delivery). Ya no la quiere: se devuelve el 90%.</p>
+    </div>
+
+    <div class="formulario" *ngIf="compra && hayElegidos">
+      <h3>Reembolso</h3>
+      <div class="vacio" *ngIf="calculando">Calculando...</div>
+      <div class="resumen-montos" *ngIf="montos && !calculando">
+        <div class="fila"><span>Prendas devueltas</span><span>Bs {{ montos.monto_prendas }}</span></div>
+        <div class="fila fila--retencion" *ngIf="positivo(montos.monto_retenido)">
+          <span>La empresa retiene el 10% (ya no la quiere)</span><span>- Bs {{ montos.monto_retenido }}</span>
+        </div>
+        <div class="fila" *ngIf="positivo(montos.monto_envio)"><span>Envío devuelto</span><span>+ Bs {{ montos.monto_envio }}</span></div>
+        <div class="fila fila--total"><span>Se le devuelve</span><span>Bs {{ montos.monto_reembolso }}</span></div>
+        <p class="metodo" *ngIf="montos.metodo_reembolso === 'EFECTIVO'">Se paga en efectivo desde la caja.</p>
+        <p class="metodo" *ngIf="montos.metodo_reembolso === 'STRIPE'">Se reembolsa automáticamente a la tarjeta del cliente.</p>
+        <p class="metodo" *ngIf="montos.metodo_reembolso === 'MANUAL'">El pago no fue con Stripe: el reembolso se registra manualmente.</p>
+      </div>
+      <div class="campo campo--ancho">
+        <label for="obs">Observación (opcional)</label>
+        <input id="obs" type="text" [(ngModel)]="observacion" placeholder="Ej.: costura abierta en la manga" />
+      </div>
+      <label class="check">
+        <input type="checkbox" [(ngModel)]="condicionesOk" />
+        Revisé la prenda: sin uso y con etiqueta (si está dañada, el defecto no es por mal uso)
+      </label>
+      <div class="botones">
+        <button type="button" class="btn-main" [disabled]="registrando || calculando || !montos" (click)="registrar()">
+          {{ registrando ? 'Registrando...' : 'Registrar devolución' }}
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ HISTORIAL DEL MES -->
+  <section *ngIf="pestana === 'MES'">
+    <div class="buscador">
+      <label for="mes">Mes</label>
+      <input id="mes" type="month" [(ngModel)]="mes" />
+      <button type="button" class="btn-main" (click)="cargarMes()">Consultar</button>
+    </div>
+
+    <div class="tarjetas">
+      <div class="tarjeta"><span class="numero">{{ devolucionesMes.length }}</span><span>Devoluciones del mes</span></div>
+      <div class="tarjeta tarjeta--ok"><span class="numero">{{ completadasMes }}</span><span>Completadas</span></div>
+      <div class="tarjeta tarjeta--proceso"><span class="numero">{{ enProcesoMes }}</span><span>En proceso</span></div>
+      <div class="tarjeta tarjeta--dinero">
+        <span class="numero">Bs {{ totalReembolsado | number:'1.2-2' }}</span>
+        <span>Reembolsado (retenido Bs {{ totalRetenido | number:'1.2-2' }})</span>
+      </div>
+    </div>
+
+    <div class="vacio" *ngIf="cargandoMes">Cargando...</div>
+    <table class="tabla" *ngIf="!cargandoMes && devolucionesMes.length > 0">
+      <thead>
+        <tr>
+          <th>Nota</th>
+          <th>Fecha</th>
+          <th>Origen</th>
+          <th>Sucursal</th>
+          <th>Reembolso</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let d of devolucionesMes">
+          <td>{{ d.numero_nota }}</td>
+          <td>{{ d.fecha_creacion | date:'dd/MM HH:mm' }}</td>
+          <td>{{ d.origen?.etiqueta }}</td>
+          <td>{{ d.sucursal }}</td>
+          <td>{{ d.es_anterior ? '-' : 'Bs ' + d.monto_reembolso }}</td>
+          <td><span class="estado" [ngClass]="claseEstado(d)">{{ d.estado_display }}</span></td>
+          <td><button type="button" class="btn-link" (click)="verNota(d)">Ver</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="vacio" *ngIf="!cargandoMes && devolucionesMes.length === 0">No hay devoluciones en este mes.</div>
+  </section>
+</div>
+
+<!-- ============================================================ NOTA DE DEVOLUCIÓN -->
+<div class="modal-fondo" *ngIf="nota" (click)="cerrarNota()">
+  <div class="modal nota-imprimible" (click)="$event.stopPropagation()">
+    <h3>Nota de devolución {{ nota.numero_nota }}</h3>
+    <p class="estado-nota"><span class="estado" [ngClass]="claseEstado(nota)">{{ nota.estado_display }}</span></p>
+    <table class="tabla tabla--nota">
+      <tbody>
+        <tr><th>Origen</th><td>{{ nota.origen?.etiqueta }} · {{ nota.sucursal }}</td></tr>
+        <tr><th>Cliente</th><td>{{ nota.cliente || 'Sin cliente' }}</td></tr>
+        <tr><th>Modalidad</th><td>{{ nota.modalidad_display || 'Anterior' }}</td></tr>
+        <tr><th>Solicitada</th><td>{{ nota.fecha_creacion | date:'dd/MM/yyyy HH:mm' }} · {{ nota.solicitado_por || '-' }}</td></tr>
+        <tr *ngIf="nota.aprobado_por"><th>Aprobada</th><td>{{ nota.fecha_aprobacion | date:'dd/MM/yyyy HH:mm' }} · {{ nota.aprobado_por }}</td></tr>
+        <tr *ngIf="nota.repartidor"><th>Repartidor</th><td>{{ nota.repartidor }}</td></tr>
+        <tr *ngIf="nota.completado_por"><th>Completada</th><td>{{ nota.fecha_completado | date:'dd/MM/yyyy HH:mm' }} · {{ nota.completado_por }}</td></tr>
+        <tr *ngIf="nota.observacion"><th>Observación</th><td>{{ nota.observacion }}</td></tr>
+        <tr *ngIf="nota.motivo_rechazo"><th>Rechazo</th><td>{{ nota.motivo_rechazo }}</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Prendas</h4>
+    <table class="tabla">
+      <thead>
+        <tr>
+          <th>Prenda</th>
+          <th>Cant.</th>
+          <th>Motivo</th>
+          <th>Pagado</th>
+          <th>Retenido</th>
+          <th>Devuelve</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let i of nota.items">
+          <td>{{ i.variante }}<span class="muted" *ngIf="!i.repone_stock"> (no vuelve al stock)</span></td>
+          <td>{{ i.cantidad }}</td>
+          <td>{{ i.motivo_display }}</td>
+          <td>{{ i.subtotal ? 'Bs ' + i.subtotal : '-' }}</td>
+          <td>{{ i.monto_retenido ? 'Bs ' + i.monto_retenido : '-' }}</td>
+          <td>{{ i.monto_reembolso ? 'Bs ' + i.monto_reembolso : '-' }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="resumen-montos" *ngIf="!nota.es_anterior">
+      <div class="fila"><span>Prendas devueltas</span><span>Bs {{ nota.monto_prendas }}</span></div>
+      <div class="fila fila--retencion" *ngIf="positivo(nota.monto_retenido)">
+        <span>La empresa retiene el 10%</span><span>- Bs {{ nota.monto_retenido }}</span>
+      </div>
+      <div class="fila" *ngIf="positivo(nota.monto_envio)"><span>Envío devuelto</span><span>+ Bs {{ nota.monto_envio }}</span></div>
+      <div class="fila fila--total"><span>Se le devuelve</span><span>Bs {{ nota.monto_reembolso }}</span></div>
+      <p class="metodo">{{ nota.metodo_reembolso_display }}
+        <span *ngIf="nota.referencia_reembolso"> · Ref. {{ nota.referencia_reembolso }}</span></p>
+    </div>
+    <p class="reembolso">{{ nota.resumen_reembolso }}</p>
+
+    <div class="botones">
+      <button type="button" class="btn-sec" (click)="imprimirNota()">Imprimir</button>
+      <button type="button" class="btn-main" (click)="cerrarNota()">Cerrar</button>
+    </div>
+  </div>
+</div>

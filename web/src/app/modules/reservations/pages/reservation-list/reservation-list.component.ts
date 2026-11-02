@@ -9,6 +9,12 @@
 // conexión con su estado (Registrada localmente, Enviada, Confirmada,
 // Rechazada), puede sincronizarlas, descartar las rechazadas y quitar las
 // confirmadas. Sin conexión, la lista del servidor sale de la copia guardada.
+// MODIFICADO (Fase 2 - reservas con anticipo y CU17): cada reserva muestra
+// lo pagado, el saldo y sus plazos. El cliente paga las pendientes de pago
+// (PagoReservaComponent) y al cancelar ve cuánto se le devuelve (lo pagado
+// menos el 10% del total); las canceladas o vencidas muestran su nota NR.
+// El personal solo cancela reservas sin pago y completa las que no deben saldo
+// (el saldo se cobra en el Punto de Venta).
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { AuthService } from '../../../../core/auth/auth.service';
@@ -30,6 +36,10 @@ export class ReservationListComponent implements OnInit, OnDestroy {
   loading = false;
   esEncargado = false;
   actionError = '';
+  actionMessage = '';
+  // NUEVO (Fase 2): reserva que se está pagando y la que se está cancelando.
+  idPagando: number | null = null;
+  idCancelando: number | null = null;
   // NUEVO (A.5)
   enLinea = true;
   reservasLocales: ReservaLocal[] = [];
@@ -100,16 +110,71 @@ export class ReservationListComponent implements OnInit, OnDestroy {
     });
   }
 
-  cancelar(id: number): void {
+  // CU17: avisa cuánto se devuelve antes de cancelar.
+  cancelar(reserva: any): void {
     this.actionError = '';
-    this.reservationService.cancelarReserva(id).subscribe({
-      next: () => this.cargarReservas(),
+    this.actionMessage = '';
+    if (!confirm(this.textoConfirmarCancelacion(reserva))) {
+      return;
+    }
+    this.idCancelando = reserva.id_reserva;
+    this.reservationService.cancelarReserva(reserva.id_reserva).subscribe({
+      next: (cancelada: any) => {
+        this.idCancelando = null;
+        this.actionMessage = cancelada?.numero_nota
+          ? `Reserva #${cancelada.id_reserva} cancelada. Nota ${cancelada.numero_nota}: se devuelven ` +
+            `Bs ${this.bs(cancelada.monto_devuelto)} a tu tarjeta.`
+          : `Reserva #${reserva.id_reserva} cancelada.`;
+        this.cargarReservas();
+      },
       error: (err) => {
+        this.idCancelando = null;
         this.actionError = this.conexion.esErrorDeRed(err)
           ? 'Sin conexión: la reserva no se puede cancelar ahora. Inténtalo al recuperar internet.'
           : err?.error?.error || 'No se pudo cancelar la reserva.';
       }
     });
+  }
+
+  private textoConfirmarCancelacion(reserva: any): string {
+    const c = reserva.cancelacion;
+    if (!c || !(Number(c.pagado) > 0)) {
+      return `¿Cancelar la Reserva #${reserva.id_reserva}? Las prendas dejarán de estar reservadas.`;
+    }
+    return `¿Cancelar la Reserva #${reserva.id_reserva}?\n\n` +
+      `Pagaste: Bs ${this.bs(c.pagado)}\n` +
+      `Se retiene el ${reserva.porcentaje_retencion}% del total: Bs ${this.bs(c.retenido)}\n` +
+      `Se te devuelve a la tarjeta: Bs ${this.bs(c.devuelto)}`;
+  }
+
+  // ---------------------------------------------------------------- pago (Fase 2)
+  abrirPago(reserva: any): void {
+    this.actionError = '';
+    this.actionMessage = '';
+    this.idPagando = reserva.id_reserva;
+  }
+
+  cerrarPago(): void {
+    this.idPagando = null;
+  }
+
+  onPagada(reserva: any): void {
+    this.idPagando = null;
+    this.actionMessage = `Reserva #${reserva.id_reserva} confirmada: pagaste Bs ${this.bs(reserva.monto_pagado)}` +
+      (this.tieneSaldo(reserva) ? ` y pagarás Bs ${this.bs(reserva.saldo)} al retirar.` : '.');
+    this.cargarReservas();
+  }
+
+  tieneSaldo(reserva: any): boolean {
+    return Number(reserva?.saldo) > 0;
+  }
+
+  tienePago(reserva: any): boolean {
+    return Number(reserva?.monto_pagado) > 0;
+  }
+
+  bs(valor: any): string {
+    return (Number(valor) || 0).toFixed(2);
   }
 
   confirmar(id: number): void {
@@ -119,13 +184,24 @@ export class ReservationListComponent implements OnInit, OnDestroy {
   }
 
   completar(id: number): void {
+    this.actionError = '';
     this.reservationService.completarReserva(id).subscribe({
-      next: () => this.cargarReservas()
+      next: () => this.cargarReservas(),
+      error: (err) => this.actionError = err?.error?.error || 'No se pudo completar la reserva.'
     });
   }
 
+  // El personal solo cancela reservas sin pago; la cancelación con reembolso es del cliente (CU17).
   puedeCancelar(reserva: any): boolean {
-    return reserva.estado === 'PENDIENTE' || reserva.estado === 'CONFIRMADA';
+    if (!reserva.puede_cancelar) {
+      return false;
+    }
+    return !this.esEncargado || !this.tienePago(reserva);
+  }
+
+  // El personal completa a mano solo reservas confirmadas sin saldo (el saldo se cobra en el POS).
+  puedeCompletar(reserva: any): boolean {
+    return reserva.estado === 'CONFIRMADA' && !this.tieneSaldo(reserva);
   }
 
   // ---------------------------------------------------------------- reservas sin conexión
@@ -150,7 +226,8 @@ export class ReservationListComponent implements OnInit, OnDestroy {
   textoEstado(reserva: ReservaLocal): string {
     switch (reserva.estado) {
       case 'CONFIRMADA':
-        return reserva.id_reserva ? `Confirmada · Reserva #${reserva.id_reserva}` : 'Confirmada';
+        // Fase 2: el servidor la recibió "Pendiente de pago" (3 horas para pagarla).
+        return reserva.id_reserva ? `Recibida · Reserva #${reserva.id_reserva}` : 'Recibida';
       case 'RECHAZADA':
         return 'Rechazada';
       case 'ENVIADA':

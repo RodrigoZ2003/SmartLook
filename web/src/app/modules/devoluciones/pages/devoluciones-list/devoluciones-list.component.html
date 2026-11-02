@@ -1,11 +1,16 @@
 <!-- web/src/app/modules/devoluciones/pages/devoluciones-list/devoluciones-list.component.html -->
+<!-- MODIFICADO (Fase 2 - CU12): muestra la nota, el origen (pedido o venta POS),
+     el reembolso y el estado; la gestión se hace en Punto de Venta > Devoluciones. -->
 <div class="devoluciones-container">
   <div class="header">
     <h2>Devoluciones</h2>
-    <select [(ngModel)]="sucursalSeleccionada" (ngModelChange)="onFiltroSucursal()" name="sucursal">
-      <option value="">Todas las sucursales</option>
-      <option *ngFor="let s of sucursales" [value]="s.id_sucursal">{{ s.nombre }}</option>
-    </select>
+    <div class="header-acciones">
+      <a routerLink="/pos/devoluciones" class="btn-gestionar">Gestionar devoluciones</a>
+      <select [(ngModel)]="sucursalSeleccionada" (ngModelChange)="onFiltroSucursal()" name="sucursal">
+        <option value="">Todas las sucursales</option>
+        <option *ngFor="let s of sucursales" [value]="s.id_sucursal">{{ s.nombre }}</option>
+      </select>
+    </div>
   </div>
 
   <div *ngIf="loading">Cargando devoluciones...</div>
@@ -14,19 +19,22 @@
     <table class="table">
       <thead>
         <tr>
+          <th>Nota</th>
           <th>Fecha</th>
-          <th>Orden</th>
+          <th>Origen</th>
           <th>Cliente</th>
           <th>Sucursal</th>
           <th>Prendas devueltas</th>
+          <th>Reembolso</th>
           <th>Estado</th>
         </tr>
       </thead>
       <tbody>
         <tr *ngFor="let d of devoluciones">
+          <td>{{ d.numero_nota }}</td>
           <td>{{ d.fecha_creacion | date:'dd/MM/yyyy HH:mm':'-0400' }}</td>
-          <td>#{{ d.orden }}</td>
-          <td>{{ d.cliente }}</td>
+          <td>{{ d.origen?.etiqueta }}</td>
+          <td>{{ d.cliente || 'Sin cliente' }}</td>
           <td>{{ d.sucursal }}</td>
           <td>
             <ul class="items-list">
@@ -36,10 +44,17 @@
               </li>
             </ul>
           </td>
-          <td><span class="badge">{{ d.estado }}</span></td>
+          <td>
+            <span *ngIf="d.es_anterior">-</span>
+            <ng-container *ngIf="!d.es_anterior">
+              Bs {{ d.monto_reembolso }}
+              <span class="retenido" *ngIf="d.monto_retenido > 0">(retenido Bs {{ d.monto_retenido }})</span>
+            </ng-container>
+          </td>
+          <td><span class="badge" [ngClass]="'badge--' + d.estado.toLowerCase()">{{ d.estado_display }}</span></td>
         </tr>
         <tr *ngIf="devoluciones.length === 0">
-          <td colspan="6">No hay devoluciones registradas todavía.</td>
+          <td colspan="8">No hay devoluciones registradas todavía.</td>
         </tr>
       </tbody>
     </table>

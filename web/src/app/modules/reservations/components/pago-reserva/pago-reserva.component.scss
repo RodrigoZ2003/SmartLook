@@ -1,0 +1,110 @@
+.pago-reserva {
+  background: white;
+  border-radius: 8px;
+  padding: 1.25rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border-left: 4px solid #1a1a2e;
+}
+
+.pago-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+
+  h3 {
+    margin: 0;
+    color: #1a1a2e;
+  }
+
+  .limite {
+    font-size: 0.8rem;
+    color: #8a4b00;
+    background: #fff3e0;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+  }
+}
+
+.total {
+  margin: 0.75rem 0;
+  color: #444;
+}
+
+.opciones {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    cursor: pointer;
+
+    &.selected {
+      border-color: #1a1a2e;
+      background: #f5f5fa;
+    }
+
+    .opcion-texto {
+      flex: 1;
+    }
+  }
+}
+
+.saldo,
+.reglas {
+  font-size: 0.85rem;
+  color: #666;
+  margin: 0.75rem 0 0;
+}
+
+.tarjeta-label {
+  display: block;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.tarjeta {
+  margin-top: 0.4rem;
+  padding: 0.75rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.tarjeta-hint {
+  font-size: 0.75rem;
+  color: #999;
+  margin: 0.4rem 0 0;
+}
+
+.error {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  background: #fdecea;
+  color: #c0392b;
+  font-size: 0.85rem;
+}
+
+.acciones {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+
+  .btn-link {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+  }
+}

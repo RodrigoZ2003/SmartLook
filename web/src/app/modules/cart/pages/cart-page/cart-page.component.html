@@ -1,3 +1,6 @@
+<!-- MODIFICADO (Fase 2 - reservas con anticipo): las prendas de una reserva
+     pagada muestran su precio reservado, no se quitan (se cancela la reserva) y
+     el total descuenta lo pagado al reservar (se cobra solo el saldo). -->
 <div class="cart-container">
   <h2>Mi Carrito</h2>
   <div *ngIf="loading">Cargando carrito...</div>
@@ -39,18 +42,35 @@
       <div class="item-info">
         <span class="item-name">{{ item.variante }}</span>
         <span class="item-price">Bs {{ item.precio_unitario }} c/u</span>
+        <span class="item-reserva" *ngIf="item.reservado">
+          Reserva #{{ item.id_reserva }}<ng-container *ngIf="!item.puede_quitar"> · pagada al reservar</ng-container>
+        </span>
       </div>
       <div class="item-qty">
-        <button type="button" (click)="decrementar(item)">-</button>
+        <button type="button" *ngIf="!item.reservado" (click)="decrementar(item)">-</button>
         <span>{{ item.cantidad }}</span>
-        <button type="button" (click)="incrementar(item)">+</button>
+        <button type="button" *ngIf="!item.reservado" (click)="incrementar(item)">+</button>
       </div>
       <div class="item-subtotal">Bs {{ item.subtotal }}</div>
-      <button type="button" class="btn-link btn-danger" (click)="quitar(item)">Quitar</button>
+      <button type="button" class="btn-link btn-danger" *ngIf="item.puede_quitar !== false" (click)="quitar(item)">Quitar</button>
+      <span class="item-fija" *ngIf="item.puede_quitar === false" title="Para no llevarla, cancela la reserva desde Mis reservas">
+        Se retira completa
+      </span>
     </div>
+    <!-- NUEVO (Fase 2): lo pagado al reservar se descuenta del total -->
+    <ng-container *ngIf="tienePagoReservas">
+      <div class="cart-summary cart-summary--envio">
+        <span>Precio de las prendas</span>
+        <span>Bs {{ carrito.subtotal_prendas | number:'1.2-2' }}</span>
+      </div>
+      <div class="cart-summary cart-summary--envio cart-summary--pagado">
+        <span>Pagado al reservar</span>
+        <span>- Bs {{ carrito.pagado_reservas | number:'1.2-2' }}</span>
+      </div>
+    </ng-container>
     <div class="cart-summary">
-      <span>{{ tipoEntrega === 'DELIVERY' ? 'Subtotal' : 'Total' }}</span>
-      <span class="total-value">Bs {{ carrito.total }}</span>
+      <span>{{ tipoEntrega === 'DELIVERY' ? 'Subtotal' : (tienePagoReservas ? 'Saldo a pagar' : 'Total') }}</span>
+      <span class="total-value">Bs {{ carrito.total | number:'1.2-2' }}</span>
     </div>
     <div class="cart-summary cart-summary--envio" *ngIf="tipoEntrega === 'DELIVERY' && cotizacion">
       <span>Envío ({{ cotizacion.distancia_km }} km)</span>
@@ -115,8 +135,11 @@
       </div>
     </div>
     <p class="error-message" *ngIf="errorPago">{{ errorPago }}</p>
+    <p class="aviso-pagado" *ngIf="sinSaldoParaRetiro">
+      Ya pagaste todo al reservar: retira tus prendas en la sucursal, no hace falta pagar aquí.
+    </p>
     <button
-      *ngIf="!mostrarFormularioPago"
+      *ngIf="!mostrarFormularioPago && !sinSaldoParaRetiro"
       type="button"
       class="btn btn-accent btn-block"
       [disabled]="iniciandoPago"

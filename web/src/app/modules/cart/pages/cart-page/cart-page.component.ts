@@ -1,3 +1,4 @@
+// web/src/app/modules/cart/pages/cart-page/cart-page.component.ts
 import { Component, OnInit, AfterViewChecked } from '@angular/core';
 import { loadStripe, Stripe, StripeCardElement, StripeElements } from '@stripe/stripe-js';
 import { environment } from '../../../../../environments/environment';
@@ -5,6 +6,9 @@ import { CartService, DatosEntrega } from '../../services/cart.service';
 // MODIFICADO (SaaS): el cliente tiene un carrito por tienda (empresa). La página
 // muestra una pestaña por tienda y cobra solo el carrito de la tienda elegida,
 // con las sucursales de esa misma tienda.
+// MODIFICADO (Fase 2 - reservas con anticipo): el total del carrito ya viene
+// con lo pagado al reservar descontado (se cobra solo el saldo).
+
 @Component({
   selector: 'app-cart-page',
   templateUrl: './cart-page.component.html',
@@ -43,7 +47,9 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
   private cardElementMontado = false;
   private clientSecret: string | null = null;
   private ordenPendiente: any = null;
+
   constructor(private cartService: CartService) {}
+
   ngOnInit(): void {
     this.cargarCarrito();
     this.cargarSucursales();
@@ -51,6 +57,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       this.stripe = stripe;
     });
   }
+
   ngAfterViewChecked(): void {
     // Monta el campo de tarjeta apenas el div del formulario existe en el DOM
     // (aparece recién cuando mostrarFormularioPago pasa a true).
@@ -64,6 +71,17 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       }
     }
   }
+
+  // NUEVO (Fase 2): el carrito tiene prendas de reservas ya pagadas (anticipo o total).
+  get tienePagoReservas(): boolean {
+    return Number(this.carrito?.pagado_reservas) > 0;
+  }
+
+  // NUEVO (Fase 2): todo está pagado y se retira en tienda (no hay nada que cobrar).
+  get sinSaldoParaRetiro(): boolean {
+    return this.tipoEntrega === 'RETIRO' && this.tienePagoReservas && !(Number(this.carrito?.total) > 0);
+  }
+
   // Total a cobrar: prendas + envío (solo si es delivery y ya hay cotización).
   get totalAPagar(): number {
     const productos = Number(this.carrito?.total) || 0;
@@ -72,6 +90,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       : 0;
     return productos + envio;
   }
+
   // Recarga los carritos activos y conserva la tienda elegida si aún tiene prendas.
   cargarCarrito(): void {
     this.loading = true;
@@ -108,6 +127,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       }
     });
   }
+
   cargarSucursales(): void {
     this.cartService.getSucursales().subscribe({
       next: (data: any) => {
@@ -120,6 +140,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       }
     });
   }
+
   // SaaS: cambia de tienda. No se permite mientras hay un pago en curso.
   seleccionarTienda(carrito: any): void {
     if (this.mostrarFormularioPago || this.iniciandoPago || this.confirmandoPago) {
@@ -134,6 +155,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
     this.errorPago = null;
     this.filtrarSucursales();
   }
+
   // SaaS: solo las sucursales activas de la tienda del carrito elegido.
   private filtrarSucursales(): void {
     const idEmpresa = this.carrito?.id_empresa;
@@ -154,22 +176,26 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       this.onCambioSucursal();
     }
   }
+
   // Prendas del carrito de una tienda (para la pestaña).
   cantidadPrendas(carrito: any): number {
     return (carrito?.items || []).reduce(
       (suma: number, item: any) => suma + (Number(item.cantidad) || 0), 0
     );
   }
+
   // Después de una compra, vuelve a mostrar los carritos de las otras tiendas.
   verOtrosCarritos(): void {
     this.ordenConfirmada = null;
     this.cargarCarrito();
   }
+
   incrementar(item: any): void {
     this.cartService.actualizarCantidad(item.id_item, item.cantidad + 1).subscribe({
       next: () => this.cargarCarrito()
     });
   }
+
   decrementar(item: any): void {
     if (item.cantidad <= 1) {
       this.quitar(item);
@@ -179,11 +205,13 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       next: () => this.cargarCarrito()
     });
   }
+
   quitar(item: any): void {
     this.cartService.quitarItem(item.id_item).subscribe({
       next: () => this.cargarCarrito()
     });
   }
+
   // ---- CU21: entrega ----
   onCambioTipoEntrega(): void {
     this.cotizacion = null;
@@ -193,6 +221,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       this.cotizar();
     }
   }
+
   onCambioSucursal(): void {
     this.cotizacion = null;
     this.errorPago = null;
@@ -205,6 +234,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       this.cotizar();
     }
   }
+
   usarMiUbicacion(): void {
     if (!navigator.geolocation) {
       this.errorPago = 'Tu navegador no permite obtener la ubicación.';
@@ -227,6 +257,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       { enableHighAccuracy: true, timeout: 15000 }
     );
   }
+
   // El cliente tocó el mapa o arrastró el punto: se guarda, se completa la dirección y se recotiza el envío.
   onUbicacionMapa(punto: { lat: number; lng: number }): void {
     this.latitud = punto.lat;
@@ -234,6 +265,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
     this.completarDireccion(punto.lat, punto.lng);
     this.cotizar();
   }
+
   // Rellena "Dirección de entrega" con la dirección del punto elegido (OpenStreetMap / Nominatim).
   // Se usa fetch y no HttpClient para que el token de sesión no se envíe a un servicio externo.
   private async completarDireccion(lat: number, lng: number): Promise<void> {
@@ -253,6 +285,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       // Si falla, el cliente puede escribir la dirección a mano.
     }
   }
+
   cotizar(): void {
     if (!this.sucursalSeleccionada) {
       this.errorPago = 'Selecciona primero la sucursal que despacha tu pedido.';
@@ -275,6 +308,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       }
     });
   }
+
   // Paso 1: valida el carrito/stock en el backend y crea el intento de pago en Stripe.
   iniciarPago(): void {
     if (!this.sucursalSeleccionada) {
@@ -319,6 +353,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       }
     });
   }
+
   // Paso 2: confirma la tarjeta ingresada con Stripe y cierra la orden en el backend.
   async confirmarPago(): Promise<void> {
     if (!this.stripe || !this.cardElement || !this.clientSecret) {
@@ -357,6 +392,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
       }
     });
   }
+
   cancelarPago(): void {
     this.mostrarFormularioPago = false;
     this.cardElementMontado = false;

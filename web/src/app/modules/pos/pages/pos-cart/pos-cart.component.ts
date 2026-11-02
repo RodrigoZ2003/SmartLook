@@ -13,9 +13,14 @@
 // localmente, Enviada, Confirmada, Rechazada); las confirmadas quedan como
 // historial con su número de venta. Sin conexión no se vende más de lo que
 // indica el stock local guardado.
+// MODIFICADO (Fase 2 - CU08): cliente opcional (por correo) en la venta, en
+// línea y sin conexión; la cola local muestra "En conflicto" con el detalle
+// (precio distinto o sin stock) y el encargado/administrador tiene un acceso
+// a "Operaciones sin conexión" con los conflictos pendientes.
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Subscription } from 'rxjs';
 import * as QRCode from 'qrcode';
+import { AuthService } from '../../../../core/auth/auth.service';
 import { InventoryService } from '../../../inventory/services/inventory.service';
 import { PosSaleService } from '../../services/pos-sale.service';
 import {
@@ -31,6 +36,9 @@ interface ItemVenta {
 }
 // El catálogo local se renueva solo si tiene más de 30 minutos.
 const VIGENCIA_CATALOGO_MS = 30 * 60 * 1000;
+// Roles que revisan y resuelven las operaciones en conflicto (CU08).
+const ROLES_GESTION_CONFLICTOS = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
+const PATRON_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 @Component({
   selector: 'app-pos-cart',
   templateUrl: './pos-cart.component.html',
@@ -47,6 +55,8 @@ export class PosCartComponent implements OnInit, OnDestroy {
   sucursales: any[] = [];
   sucursalSeleccionada: number | null = null;
   metodoPago: string = 'EFECTIVO';
+  // NUEVO (CU08): cliente opcional de la venta, indicado por su correo.
+  correoCliente = '';
   // QR de cobro (visual, sin conexión bancaria real - ver nota en el informe)
   qrDataUrl: string | null = null;
   // Estado de registro
@@ -61,12 +71,19 @@ export class PosCartComponent implements OnInit, OnDestroy {
   fechaCatalogo: string | null = null;
   totalCatalogo = 0;
   actualizandoCatalogo = false;
+  // NUEVO (CU08): acceso a los conflictos para encargado/administrador.
+  esGestor = false;
+  conflictosPendientes = 0;
   private suscripciones = new Subscription();
   constructor(
     private inventoryService: InventoryService,
     private posSaleService: PosSaleService,
-    private offline: PosOfflineService
-  ) {}
+    private offline: PosOfflineService,
+    private authService: AuthService
+  ) {
+    const roles = this.authService.obtenerRoles();
+    this.esGestor = roles.some(rol => ROLES_GESTION_CONFLICTOS.includes(rol));
+  }
   ngOnInit(): void {
     this.suscripciones.add(this.offline.enLinea$.subscribe(enLinea => {
       const recuperada = enLinea && !this.enLinea;
@@ -77,11 +94,18 @@ export class PosCartComponent implements OnInit, OnDestroy {
       }
       if (recuperada) {
         this.cargarSucursales();
+        this.cargarConflictosPendientes();
       }
     }));
     this.suscripciones.add(this.offline.ventas$.subscribe(v => this.ventasLocales = v));
     this.suscripciones.add(this.offline.sincronizando$.subscribe(s => this.sincronizando = s));
-    this.suscripciones.add(this.offline.resultado$.subscribe(r => this.resultadoSync = r));
+    this.suscripciones.add(this.offline.resultado$.subscribe(r => {
+      this.resultadoSync = r;
+      if (r && !r.error) {
+        this.cargarConflictosPendientes();
+      }
+    }));
+    this.cargarConflictosPendientes();
     this.offline.recargar();
     this.cargarSucursales();
     this.prepararCatalogoLocal();
@@ -99,6 +123,23 @@ export class PosCartComponent implements OnInit, OnDestroy {
   }
   get rechazadas(): number {
     return this.ventasLocales.filter(v => v.estado === 'RECHAZADA').length;
+  }
+  get enConflicto(): number {
+    return this.ventasLocales.filter(v => v.estado === 'EN_CONFLICTO').length;
+  }
+  // Ventas que el servidor ya registró (se pueden quitar del dispositivo).
+  get registradasEnServidor(): number {
+    return this.confirmadas + this.enConflicto;
+  }
+  // Cantidad de conflictos sin resolver de la empresa (solo encargado/administrador).
+  cargarConflictosPendientes(): void {
+    if (!this.esGestor || !this.enLinea) {
+      return;
+    }
+    this.posSaleService.resumenOperaciones().subscribe({
+      next: (resumen) => this.conflictosPendientes = resumen?.pendientes || 0,
+      error: () => undefined
+    });
   }
   cargarSucursales(): void {
     if (!this.enLinea) {
@@ -243,6 +284,11 @@ export class PosCartComponent implements OnInit, OnDestroy {
       this.error = 'Selecciona la sucursal.';
       return;
     }
+    const correo = this.correoCliente.trim();
+    if (correo && !PATRON_CORREO.test(correo)) {
+      this.error = 'El correo del cliente no es válido (o déjalo vacío).';
+      return;
+    }
     this.error = null;
     if (!this.enLinea) {
       this.guardarSinConexion();
@@ -250,7 +296,9 @@ export class PosCartComponent implements OnInit, OnDestroy {
     }
     this.registrando = true;
     const itemsPayload = this.items.map(i => ({ id_variante: i.id_variante, cantidad: i.cantidad }));
-    this.posSaleService.registrarVenta(this.sucursalSeleccionada, this.metodoPago, itemsPayload).subscribe({
+    this.posSaleService.registrarVenta(
+      this.sucursalSeleccionada, this.metodoPago, itemsPayload, this.correoCliente.trim() || null
+    ).subscribe({
       next: (venta) => {
         this.ventaConfirmada = venta;
         this.registrando = false;
@@ -284,6 +332,7 @@ export class PosCartComponent implements OnInit, OnDestroy {
         id_sucursal: this.sucursalSeleccionada as number,
         sucursal: sucursal?.nombre || '',
         metodo_pago: this.metodoPago,
+        correo_cliente: this.correoCliente.trim() || null,
         items: this.items.map(i => ({ ...i }))
       });
       this.ventaConfirmada = { offline: true, ...venta };
@@ -308,6 +357,8 @@ export class PosCartComponent implements OnInit, OnDestroy {
     switch (venta.estado) {
       case 'CONFIRMADA':
         return venta.id_venta ? `Confirmada · Venta #${venta.id_venta}` : 'Confirmada';
+      case 'EN_CONFLICTO':
+        return venta.id_venta ? `En conflicto · Venta #${venta.id_venta}` : 'En conflicto';
       case 'RECHAZADA':
         return 'Rechazada';
       case 'ENVIADA':
@@ -322,6 +373,7 @@ export class PosCartComponent implements OnInit, OnDestroy {
     this.resultados = [];
     this.sucursalSeleccionada = null;
     this.metodoPago = 'EFECTIVO';
+    this.correoCliente = '';
     this.qrDataUrl = null;
     this.ventaConfirmada = null;
     this.error = null;

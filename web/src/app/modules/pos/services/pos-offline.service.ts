@@ -24,6 +24,10 @@
 // ConexionService (con el service worker, un fallo de red llega como 504) y
 // la consulta al servidor lleva "_ping" para que nunca se responda con la
 // copia guardada del catálogo.
+// MODIFICADO (Fase 2 - CU08): cada venta envía el precio cobrado sin conexión
+// y el correo del cliente (opcional). Nuevo estado local EN_CONFLICTO: el
+// servidor registró la venta, pero con precio distinto o sin stock; queda
+// para que el encargado o el administrador la resuelva.
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, firstValueFrom } from 'rxjs';
 import { ApiService } from '../../../core/services/api.service';
@@ -34,7 +38,18 @@ import {
   OfflineDbService
 } from '../../../core/services/offline-db.service';
 
-export type EstadoVentaLocal = 'REGISTRADA' | 'ENVIADA' | 'CONFIRMADA' | 'RECHAZADA';
+export type EstadoVentaLocal = 'REGISTRADA' | 'ENVIADA' | 'CONFIRMADA' | 'EN_CONFLICTO' | 'RECHAZADA';
+
+// Detalle de un conflicto devuelto por el servidor (por prenda).
+export interface ConflictoVenta {
+  tipo: 'PRECIO' | 'STOCK';
+  prenda: string;
+  cantidad: number;
+  precio_offline?: string;
+  precio_servidor?: string;
+  diferencia?: string;
+  stock_disponible?: number;
+}
 
 export interface ItemVentaLocal {
   id_variante: number;
@@ -49,6 +64,7 @@ export interface VentaLocal {
   id_sucursal: number;
   sucursal: string;
   metodo_pago: string;
+  correo_cliente: string | null;
   items: ItemVentaLocal[];
   total: number;
   estado: EstadoVentaLocal;
@@ -57,11 +73,14 @@ export interface VentaLocal {
   id_usuario: number | null;
   id_venta: number | null;
   fecha_confirmacion: string | null;
+  tipo_conflicto: string | null;
+  conflictos: ConflictoVenta[];
 }
 
 export interface ResultadoSync {
   sincronizadas: number;
   duplicadas: number;
+  en_conflicto: number;
   rechazadas: number;
   error: string | null;
   fecha: string;
@@ -103,7 +122,10 @@ function normalizarVenta(venta: any): VentaLocal {
     ...venta,
     estado: equivalencias[venta.estado] || venta.estado,
     id_venta: venta.id_venta ?? null,
-    fecha_confirmacion: venta.fecha_confirmacion ?? null
+    fecha_confirmacion: venta.fecha_confirmacion ?? null,
+    correo_cliente: venta.correo_cliente ?? null,
+    tipo_conflicto: venta.tipo_conflicto ?? null,
+    conflictos: venta.conflictos ?? []
   };
 }
 
@@ -202,6 +224,7 @@ export class PosOfflineService {
     id_sucursal: number;
     sucursal: string;
     metodo_pago: string;
+    correo_cliente?: string | null;
     items: ItemVentaLocal[];
   }): Promise<VentaLocal> {
     const venta: VentaLocal = {
@@ -210,6 +233,7 @@ export class PosOfflineService {
       id_sucursal: datos.id_sucursal,
       sucursal: datos.sucursal,
       metodo_pago: datos.metodo_pago,
+      correo_cliente: (datos.correo_cliente || '').trim() || null,
       items: datos.items.map(i => ({ ...i })),
       total: datos.items.reduce((s, i) => s + i.precio * i.cantidad, 0),
       estado: 'REGISTRADA',
@@ -217,7 +241,9 @@ export class PosOfflineService {
       intentos: 0,
       id_usuario: this.usuarioActual(),
       id_venta: null,
-      fecha_confirmacion: null
+      fecha_confirmacion: null,
+      tipo_conflicto: null,
+      conflictos: []
     };
     await this.db.guardar(ALMACEN_VENTAS, venta);
     await this.ajustarStockLocal(venta.items, -1);
@@ -236,10 +262,11 @@ export class PosOfflineService {
     await this.recargar();
   }
 
-  // Quita del dispositivo el historial de ventas ya confirmadas por el servidor.
+  // Quita del dispositivo el historial de ventas que el servidor ya registró
+  // (confirmadas y en conflicto: el conflicto se resuelve en el servidor).
   async limpiarConfirmadas(): Promise<void> {
     const ventas = await this.ventasDelUsuario();
-    for (const venta of ventas.filter(v => v.estado === 'CONFIRMADA')) {
+    for (const venta of ventas.filter(v => v.estado === 'CONFIRMADA' || v.estado === 'EN_CONFLICTO')) {
       await this.db.eliminar(ALMACEN_VENTAS, venta.uuid);
     }
     await this.recargar();
@@ -262,7 +289,8 @@ export class PosOfflineService {
     }
     this.sincronizandoSubject.next(true);
     const resultado: ResultadoSync = {
-      sincronizadas: 0, duplicadas: 0, rechazadas: 0, error: null, fecha: new Date().toISOString()
+      sincronizadas: 0, duplicadas: 0, en_conflicto: 0, rechazadas: 0, error: null,
+      fecha: new Date().toISOString()
     };
     try {
       for (let i = 0; i < pendientes.length; i += MAX_POR_LOTE) {
@@ -297,7 +325,13 @@ export class PosOfflineService {
           fecha_operacion: v.fecha_operacion,
           id_sucursal: v.id_sucursal,
           metodo_pago: v.metodo_pago,
-          items: v.items.map(i => ({ id_variante: i.id_variante, cantidad: i.cantidad }))
+          correo_cliente: v.correo_cliente || undefined,
+          // CU08: el precio que se cobró sin conexión (el servidor lo compara).
+          items: v.items.map(i => ({
+            id_variante: i.id_variante,
+            cantidad: i.cantidad,
+            precio_unitario: Number(i.precio).toFixed(2)
+          }))
         }))
       }));
     } catch (err) {
@@ -329,6 +363,18 @@ export class PosOfflineService {
         } else {
           resultado.duplicadas += 1;
         }
+        if (r.mensaje && r.estado === 'SINCRONIZADA' && r.mensaje !== 'Venta registrada.') {
+          venta.mensaje = r.mensaje;
+        }
+      } else if (r.estado === 'EN_CONFLICTO') {
+        // CU08: el servidor registró la venta, pero queda para revisión.
+        venta.estado = 'EN_CONFLICTO';
+        venta.id_venta = r.id_venta ?? null;
+        venta.fecha_confirmacion = new Date().toISOString();
+        venta.mensaje = r.mensaje || 'Venta registrada en conflicto.';
+        venta.tipo_conflicto = r.tipo_conflicto ?? null;
+        venta.conflictos = r.conflictos || [];
+        resultado.en_conflicto += 1;
       } else {
         venta.estado = 'RECHAZADA';
         venta.mensaje = r.mensaje || 'El servidor rechazó la venta.';

@@ -4,13 +4,14 @@
     <a *ngIf="!esEncargado" routerLink="/reservations/nueva" class="btn btn-accent">+ Nueva Reserva</a>
   </div>
   <div class="alert alert-error" *ngIf="actionError">{{ actionError }}</div>
+  <div class="alert alert-success" *ngIf="actionMessage">{{ actionMessage }}</div>
   <!-- NUEVO (A.5): reservas guardadas en este dispositivo y su estado -->
   <section class="cola" *ngIf="!esEncargado && (reservasLocales.length > 0 || resultadoSync)">
     <div class="cola-head">
       <h3>Reservas sin conexión</h3>
       <div class="cola-acciones">
         <button type="button" class="btn btn-secondary" *ngIf="confirmadas > 0" (click)="limpiarConfirmadas()">
-          Quitar confirmadas
+          Quitar recibidas
         </button>
         <button type="button" class="btn btn-secondary" [disabled]="!enLinea || sincronizando || pendientes === 0"
                 (click)="sincronizarAhora()">
@@ -19,7 +20,7 @@
       </div>
     </div>
     <p class="cola-resumen">
-      {{ pendientes }} por enviar · {{ confirmadas }} confirmada(s)<span *ngIf="rechazadas > 0"> · {{ rechazadas }} rechazada(s)</span>
+      {{ pendientes }} por enviar · {{ confirmadas }} recibida(s)<span *ngIf="rechazadas > 0"> · {{ rechazadas }} rechazada(s)</span>
     </p>
     <div class="sync-resultado" *ngIf="resultadoSync as r" [class.sync-resultado--error]="!!r.error">
       <ng-container *ngIf="!r.error">
@@ -54,29 +55,76 @@
   <div class="reserva-card" *ngFor="let reserva of reservas">
     <div class="reserva-header">
       <div>
+        <span class="numero">Reserva #{{ reserva.id_reserva }}</span>
         <strong *ngIf="esEncargado">{{ reserva.cliente }}</strong>
-        <span class="sucursal">{{ reserva.sucursal }}</span>
+        <span class="sucursal">
+          <ng-container *ngIf="!esEncargado && reserva.empresa_nombre">{{ reserva.empresa_nombre }} · </ng-container>{{ reserva.sucursal }}
+        </span>
       </div>
-      <span class="estado-badge" [class]="'estado-' + reserva.estado.toLowerCase()">
-        {{ reserva.estado }}
+      <span class="estado-badge" [ngClass]="'estado-' + reserva.estado.toLowerCase()">
+        {{ reserva.estado_display || reserva.estado }}
       </span>
     </div>
     <div class="reserva-body">
-      <p><strong>Fecha:</strong> {{ reserva.fecha_reserva }} &nbsp; <strong>Hora:</strong> {{ reserva.hora_reserva }}</p>
+      <p><strong>Fecha:</strong> {{ reserva.fecha_reserva | date:'dd/MM/yyyy' }} &nbsp; <strong>Hora:</strong> {{ reserva.hora_reserva | slice:0:5 }}</p>
       <p class="items-label"><strong>Prendas:</strong></p>
       <ul class="items-list">
-        <li *ngFor="let item of reserva.items">{{ item.variante }}</li>
+        <li *ngFor="let item of reserva.items">
+          {{ item.variante }}<ng-container *ngIf="item.precio_unitario"> · Bs {{ item.precio_unitario | number:'1.2-2' }}</ng-container>
+        </li>
       </ul>
+      <!-- NUEVO (Fase 2): pago, saldo y plazos -->
+      <div class="montos" *ngIf="reserva.monto_total !== null">
+        <div><span>Total</span><strong>Bs {{ reserva.monto_total | number:'1.2-2' }}</strong></div>
+        <div *ngIf="tienePago(reserva)">
+          <span>Pagado ({{ reserva.tipo_pago_display | lowercase }})</span>
+          <strong>Bs {{ reserva.monto_pagado | number:'1.2-2' }}</strong>
+        </div>
+        <div *ngIf="reserva.estado === 'CONFIRMADA'">
+          <span>Saldo al retirar</span><strong>Bs {{ reserva.saldo | number:'1.2-2' }}</strong>
+        </div>
+      </div>
+      <p class="plazo plazo--pago" *ngIf="reserva.estado === 'PENDIENTE_PAGO' && reserva.fecha_limite_pago">
+        Págala antes del {{ reserva.fecha_limite_pago | date:'dd/MM/yyyy HH:mm' }}; si no, vence y las prendas no quedan apartadas.
+      </p>
+      <p class="plazo" *ngIf="(reserva.estado === 'CONFIRMADA' || reserva.estado === 'PENDIENTE') && reserva.fecha_vencimiento">
+        Retírala hasta el {{ reserva.fecha_vencimiento | date:'dd/MM/yyyy HH:mm' }}<ng-container *ngIf="tienePago(reserva)">;
+        después vence y se devuelve lo pagado menos el {{ reserva.porcentaje_retencion }}% del total</ng-container>.
+      </p>
+      <p class="plazo" *ngIf="esEncargado && reserva.estado === 'CONFIRMADA' && tieneSaldo(reserva)">
+        El saldo se cobra en el Punto de Venta al retirar (la reserva se retira completa).
+      </p>
+      <!-- NUEVO (Fase 2 - CU17): nota de devolución al cancelar o vencer -->
+      <div class="nota" *ngIf="reserva.numero_nota">
+        <strong>Nota de devolución {{ reserva.numero_nota }}</strong>
+        <div><span>Pagado</span><span>Bs {{ reserva.monto_pagado | number:'1.2-2' }}</span></div>
+        <div><span>Retenido ({{ reserva.porcentaje_retencion }}% del total)</span><span>Bs {{ reserva.monto_retenido | number:'1.2-2' }}</span></div>
+        <div class="nota-devuelto"><span>Devuelto a la tarjeta</span><span>Bs {{ reserva.monto_devuelto | number:'1.2-2' }}</span></div>
+        <small *ngIf="reserva.fecha_cierre">{{ reserva.fecha_cierre | date:'dd/MM/yyyy HH:mm' }}</small>
+      </div>
+      <p class="motivo" *ngIf="reserva.motivo_cierre && (reserva.estado === 'CANCELADA' || reserva.estado === 'VENCIDA')">
+        {{ reserva.motivo_cierre }}
+      </p>
     </div>
-    <div class="reserva-actions">
-      <button *ngIf="puedeCancelar(reserva)" class="btn-link btn-danger" (click)="cancelar(reserva.id_reserva)">
-        Cancelar
+    <app-pago-reserva
+      *ngIf="idPagando === reserva.id_reserva"
+      [reserva]="reserva"
+      (pagada)="onPagada($event)"
+      (cerrar)="cerrarPago()"
+    ></app-pago-reserva>
+    <div class="reserva-actions" *ngIf="idPagando !== reserva.id_reserva">
+      <button *ngIf="puedeCancelar(reserva)" class="btn-link btn-danger" [disabled]="idCancelando === reserva.id_reserva"
+              (click)="cancelar(reserva)">
+        {{ idCancelando === reserva.id_reserva ? 'Cancelando...' : 'Cancelar reserva' }}
+      </button>
+      <button *ngIf="!esEncargado && reserva.puede_pagar" class="btn btn-accent" (click)="abrirPago(reserva)">
+        Pagar ahora
       </button>
       <ng-container *ngIf="esEncargado">
         <button *ngIf="reserva.estado === 'PENDIENTE'" class="btn btn-secondary" (click)="confirmar(reserva.id_reserva)">
           Confirmar
         </button>
-        <button *ngIf="reserva.estado === 'CONFIRMADA'" class="btn btn-accent" (click)="completar(reserva.id_reserva)">
+        <button *ngIf="puedeCompletar(reserva)" class="btn btn-accent" (click)="completar(reserva.id_reserva)">
           Marcar como Completada
         </button>
       </ng-container>

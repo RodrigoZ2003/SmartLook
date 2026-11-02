@@ -1,5 +1,18 @@
 <div class="pos-container">
-  <h2>Punto de Venta</h2>
+  <div class="pos-head">
+    <h2>Punto de Venta</h2>
+    <div class="pos-accesos">
+      <!-- NUEVO (CU05): cambio de prenda por talla o color -->
+      <a routerLink="/pos/cambios" class="btn-operaciones">Cambios de prenda</a>
+      <!-- NUEVO (CU12): devolución con reembolso -->
+      <a routerLink="/pos/devoluciones" class="btn-operaciones">Devoluciones</a>
+      <!-- NUEVO (CU08): historial y conflictos de las ventas sin conexión -->
+      <a routerLink="/pos/operaciones" class="btn-operaciones" *ngIf="esGestor">
+        Operaciones sin conexión
+        <span class="badge-conflictos" *ngIf="conflictosPendientes > 0">{{ conflictosPendientes }} en conflicto</span>
+      </a>
+    </div>
+  </div>
   <!-- NUEVO (A.5): estado de la conexión y del catálogo guardado -->
   <div class="conexion" [class.conexion--offline]="!enLinea">
     <span class="punto"></span>
@@ -25,6 +38,7 @@
     <h3>Venta registrada</h3>
     <p>Venta #{{ ventaConfirmada.id_venta }} - {{ ventaConfirmada.sucursal }}</p>
     <p>Cajero: {{ ventaConfirmada.usuario }}</p>
+    <p *ngIf="ventaConfirmada.cliente">Cliente: {{ ventaConfirmada.cliente.nombre }} ({{ ventaConfirmada.cliente.correo }})</p>
     <p>Método de pago: {{ ventaConfirmada.metodo_pago }}</p>
     <table class="receipt-table">
       <thead>
@@ -53,6 +67,7 @@
     <p class="pendiente-tag">Registrada localmente · pendiente de enviar</p>
     <p>{{ ventaConfirmada.sucursal }} - {{ ventaConfirmada.fecha_operacion | date:'dd/MM/yyyy HH:mm' }}</p>
     <p>Método de pago: {{ ventaConfirmada.metodo_pago }}</p>
+    <p *ngIf="ventaConfirmada.correo_cliente">Cliente: {{ ventaConfirmada.correo_cliente }}</p>
     <p class="codigo">Código: {{ ventaConfirmada.uuid }}</p>
     <table class="receipt-table">
       <thead>
@@ -128,6 +143,18 @@
           <option *ngFor="let s of sucursales" [ngValue]="s.id_sucursal">{{ s.nombre }}</option>
         </select>
       </div>
+      <!-- NUEVO (CU08): cliente opcional -->
+      <div class="form-group">
+        <label for="correoCliente">Correo del cliente <span class="opcional">(opcional)</span></label>
+        <input
+          id="correoCliente"
+          type="email"
+          [(ngModel)]="correoCliente"
+          placeholder="cliente@correo.com"
+          autocomplete="off"
+        />
+        <small class="ayuda-neutra" *ngIf="!enLinea">Sin conexión se valida al sincronizar; si no existe, la venta queda sin cliente.</small>
+      </div>
       <div class="form-group">
         <label for="metodoPago">Método de pago</label>
         <select id="metodoPago" [(ngModel)]="metodoPago" (change)="onMetodoPagoChange()">
@@ -158,8 +185,8 @@
     <div class="cola-head">
       <h3>Ventas sin conexión</h3>
       <div class="cola-acciones">
-        <button type="button" class="btn btn-secondary" *ngIf="confirmadas > 0" (click)="limpiarConfirmadas()">
-          Quitar confirmadas
+        <button type="button" class="btn btn-secondary" *ngIf="registradasEnServidor > 0" (click)="limpiarConfirmadas()">
+          Quitar registradas
         </button>
         <button type="button" class="btn btn-secondary" [disabled]="!enLinea || sincronizando || pendientes === 0"
                 (click)="sincronizarAhora()">
@@ -168,24 +195,39 @@
       </div>
     </div>
     <p class="cola-resumen">
-      {{ pendientes }} por enviar · {{ confirmadas }} confirmada(s)<span *ngIf="rechazadas > 0"> · {{ rechazadas }} rechazada(s)</span>
+      {{ pendientes }} por enviar · {{ confirmadas }} confirmada(s)<span *ngIf="enConflicto > 0"> · {{ enConflicto }} en conflicto</span><span *ngIf="rechazadas > 0"> · {{ rechazadas }} rechazada(s)</span>
     </p>
     <div class="sync-resultado" *ngIf="resultadoSync as r" [class.sync-resultado--error]="!!r.error">
       <ng-container *ngIf="!r.error">
         Última sincronización ({{ r.fecha | date:'dd/MM HH:mm' }}): {{ r.sincronizadas }} registrada(s),
-        {{ r.duplicadas }} ya registrada(s) antes, {{ r.rechazadas }} rechazada(s).
+        {{ r.en_conflicto || 0 }} en conflicto, {{ r.duplicadas }} ya registrada(s) antes, {{ r.rechazadas }} rechazada(s).
       </ng-container>
       <ng-container *ngIf="r.error">{{ r.error }}</ng-container>
     </div>
-    <div class="cola-item" *ngFor="let v of ventasLocales" [class.cola-item--rechazada]="v.estado === 'RECHAZADA'">
+    <div class="cola-item" *ngFor="let v of ventasLocales" [class.cola-item--rechazada]="v.estado === 'RECHAZADA'"
+         [class.cola-item--conflicto]="v.estado === 'EN_CONFLICTO'">
       <div class="cola-info">
         <strong>{{ v.sucursal || 'Sucursal' }}</strong>
         <span>{{ v.fecha_operacion | date:'dd/MM/yyyy HH:mm' }} · {{ v.items.length }} prenda(s) · Bs {{ v.total | number:'1.2-2' }}</span>
+        <span *ngIf="v.correo_cliente">Cliente: {{ v.correo_cliente }}</span>
         <span class="codigo">Código: {{ v.uuid }}</span>
         <span *ngIf="v.estado === 'CONFIRMADA' && v.fecha_confirmacion">
           Confirmada el {{ v.fecha_confirmacion | date:'dd/MM/yyyy HH:mm' }}<ng-container *ngIf="v.mensaje"> · {{ v.mensaje }}</ng-container>
         </span>
         <span class="motivo" *ngIf="v.estado === 'RECHAZADA'">Motivo: {{ v.mensaje }}</span>
+        <!-- NUEVO (CU08): detalle del conflicto -->
+        <ng-container *ngIf="v.estado === 'EN_CONFLICTO'">
+          <span class="conflicto-msg">{{ v.mensaje }}</span>
+          <span class="conflicto-linea" *ngFor="let c of v.conflictos">
+            <ng-container *ngIf="c.tipo === 'PRECIO'">
+              {{ c.prenda }}: cobrado Bs {{ c.precio_offline }}, precio actual Bs {{ c.precio_servidor }} (diferencia Bs {{ c.diferencia }})
+            </ng-container>
+            <ng-container *ngIf="c.tipo === 'STOCK'">
+              {{ c.prenda }}: se vendieron {{ c.cantidad }}, en el servidor quedaban {{ c.stock_disponible }}
+            </ng-container>
+          </span>
+          <span class="conflicto-nota">Lo revisa el encargado o el administrador.</span>
+        </ng-container>
       </div>
       <span class="estado" [ngClass]="'estado--' + v.estado.toLowerCase()">{{ textoEstado(v) }}</span>
       <button type="button" class="btn-link btn-danger" *ngIf="v.estado === 'RECHAZADA'" (click)="descartar(v)">Descartar</button>

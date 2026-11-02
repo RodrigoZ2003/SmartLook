@@ -1,3 +1,8 @@
+# backend/apps/users_auth/views.py
+# MODIFICADO (Fase 2 - reservas con anticipo): al iniciar sesión se procesan
+# los vencimientos de reservas (ver _vencer_reservas_al_ingresar).
+import logging
+
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -27,6 +32,30 @@ from .serializers import (
 from .services import AuthService
 from common.utils import log_audit, get_client_ip
 
+logger = logging.getLogger(__name__)
+
+
+def _vencer_reservas_al_ingresar(usuario):
+    """NUEVO (Fase 2 - reservas con anticipo): al iniciar sesión se vencen las
+    reservas cuyo plazo pasó (Render gratis no tiene tareas programadas).
+
+    El cliente procesa las suyas; el personal, las de su empresa; el
+    SUPER_ADMIN, todas. Un error aquí nunca impide iniciar sesión.
+    """
+    from apps.reservations.pagos import ReservaPagoService
+
+    try:
+        roles = set(usuario.roles.values_list("nombre", flat=True))
+        if "CLIENTE" in roles:
+            cliente = Cliente.objects.filter(id_usuario=usuario).first()
+            if cliente is not None:
+                ReservaPagoService.procesar_vencimientos(cliente=cliente)
+        elif "SUPER_ADMIN" in roles:
+            ReservaPagoService.procesar_vencimientos()
+        elif usuario.id_empresa_id:
+            ReservaPagoService.procesar_vencimientos(empresa_id=usuario.id_empresa_id)
+    except Exception:
+        logger.exception("No se pudieron procesar los vencimientos de reservas al ingresar.")
 
 class RegistroClienteView(APIView):
     permission_classes = [AllowAny]
@@ -73,7 +102,6 @@ class RegistroClienteView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-
 class LoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -98,6 +126,7 @@ class LoginView(APIView):
             if usuario:
 
                 tokens = AuthService.generar_tokens(usuario)
+                _vencer_reservas_al_ingresar(usuario)
 
                 log_audit(
                     usuario,
@@ -128,12 +157,10 @@ class LoginView(APIView):
             status=status.HTTP_400_BAD_REQUEST
         )
 
-
 # NUEVO (SaaS - paso 4): roles que el personal de una empresa puede asignar.
 # SUPER_ADMIN solo lo asigna otro SUPER_ADMIN y CLIENTE no se asigna desde
 # administración (los clientes se registran solos y son globales).
 ROLES_DE_EMPRESA = {"ADMIN_EMPRESA", "ENCARGADO_SUCURSAL", "CAJERO", "REPARTIDOR"}
-
 
 class UsuarioViewSet(ModelViewSet):
     """Gestión de usuarios acotada a la empresa del administrador.
@@ -252,7 +279,6 @@ class UsuarioViewSet(ModelViewSet):
             raise ValidationError({"error": "No puedes eliminar tu propio usuario."})
         instance.delete()
 
-
 class RolViewSet(ReadOnlyModelViewSet):
     serializer_class = RolSerializer
     permission_classes = [IsAuthenticated]
@@ -320,12 +346,10 @@ class RolViewSet(ReadOnlyModelViewSet):
             )
         })
 
-
 class PermisoViewSet(ReadOnlyModelViewSet):
     queryset = Permiso.objects.all()
     serializer_class = PermisoSerializer
     permission_classes = [IsAdminEmpresa]
-
 
 class BitacoraViewSet(ReadOnlyModelViewSet):
     serializer_class = BitacoraSerializer

@@ -1,8 +1,21 @@
+// web/src/app/modules/deliveries/pages/deliveries-page/deliveries-page.component.ts
+//
+// MODIFICADO (Fase 2 - CU05): pestaña "Cambios de prenda". El repartidor ve
+// los cambios que le asignaron (dirección, qué recoger y qué entregar, fecha
+// de la visita y límite de 48 h), marca "Salir a hacer el cambio" y
+// "Completar cambio" confirmando que la prenda devuelta está sin uso y con
+// etiqueta. El encargado/administrador ve los de toda la empresa.
+// MODIFICADO (Fase 2 - CU12): pestaña "Devoluciones". El repartidor ve los
+// recojos asignados (dirección, prendas, monto a reembolsar, fecha y límite
+// de 48 h), marca "Salir a recoger" y "Completar devolución" después de
+// revisar la prenda; ahí se repone el stock y se reembolsa al cliente.
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Subject, timer } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../../../core/services/api.service';
 import { AuthService } from '../../../../core/auth/auth.service';
+import { CambiosService } from '../../../../core/services/cambios.service';
+import { DevolucionesService } from '../../../../core/services/devoluciones.service';
 
 const ROLES_GESTION = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
 
@@ -13,6 +26,19 @@ const ROLES_GESTION = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
       <h2>{{ esGestor ? 'Entregas' : 'Mis entregas' }}</h2>
       <p class="hint">Esta pantalla se actualiza sola cada 10 segundos.</p>
 
+      <div class="tabs">
+        <button type="button" [class.active]="vista === 'ENTREGAS'" (click)="cambiarVista('ENTREGAS')">Pedidos</button>
+        <button type="button" [class.active]="vista === 'CAMBIOS'" (click)="cambiarVista('CAMBIOS')">
+          Cambios de prenda
+          <span class="tab-count" *ngIf="cambiosPorHacer > 0">{{ cambiosPorHacer }}</span>
+        </button>
+        <button type="button" [class.active]="vista === 'DEVOLUCIONES'" (click)="cambiarVista('DEVOLUCIONES')">
+          Devoluciones
+          <span class="tab-count" *ngIf="recojosPorHacer > 0">{{ recojosPorHacer }}</span>
+        </button>
+      </div>
+
+      <ng-container *ngIf="vista === 'ENTREGAS'">
       <div class="filters">
         <button type="button" *ngFor="let f of filtros"
                 [class.active]="filtro === f.valor" (click)="cambiarFiltro(f.valor)">
@@ -76,6 +102,123 @@ const ROLES_GESTION = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
                   (click)="ejecutar(d, 'entregar')">Marcar entregado</button>
         </div>
       </div>
+      </ng-container>
+
+      <!-- NUEVO (CU05): cambios de prenda con delivery -->
+      <ng-container *ngIf="vista === 'CAMBIOS'">
+        <div class="filters">
+          <button type="button" *ngFor="let f of filtrosCambio"
+                  [class.active]="filtroCambio === f.valor" (click)="filtroCambio = f.valor">
+            {{ f.texto }}
+          </button>
+        </div>
+        <p class="msg-ok" *ngIf="mensaje">{{ mensaje }}</p>
+        <p class="msg-error" *ngIf="error">{{ error }}</p>
+        <div class="empty" *ngIf="cambiosVisibles.length === 0">
+          <p>No hay cambios en esta lista.</p>
+        </div>
+        <div class="delivery-card" *ngFor="let c of cambiosVisibles; trackBy: porCambio" [class.atrasado]="c.atrasado">
+          <div class="card-head">
+            <div>
+              <strong>Cambio {{ c.numero_nota }}</strong>
+              <span class="muted">{{ c.origen?.etiqueta }} · {{ c.sucursal }}</span>
+            </div>
+            <span class="badge" [ngClass]="'estado-' + c.estado.toLowerCase()">{{ c.estado_display }}</span>
+          </div>
+          <div class="card-body">
+            <p><strong>Cliente:</strong> {{ c.cliente?.nombre }}
+              <span *ngIf="c.cliente?.telefono"> · Tel. {{ c.cliente.telefono }}</span></p>
+            <p *ngIf="c.entrega"><strong>Dirección:</strong> {{ c.entrega.direccion }}
+              <span *ngIf="c.entrega.referencia">({{ c.entrega.referencia }})</span></p>
+            <p class="recoger"><strong>Recoger:</strong> {{ c.prenda_devuelta }} ({{ c.cantidad }} u.)</p>
+            <p class="entregar"><strong>Entregar:</strong> {{ c.prenda_entregada }}</p>
+            <p><strong>Visita:</strong> {{ c.fecha_programada | date:'dd/MM/yyyy HH:mm' }}
+              · límite {{ c.fecha_limite | date:'dd/MM/yyyy HH:mm' }}
+              <span class="tag-atrasado" *ngIf="c.atrasado">Atrasado</span></p>
+            <p *ngIf="esGestor"><strong>Repartidor:</strong> {{ c.repartidor || 'Sin asignar' }}</p>
+            <p *ngIf="c.observacion" class="muted-text">Comentario: {{ c.observacion }}</p>
+            <a class="map-link" target="_blank" rel="noopener" *ngIf="c.entrega"
+               [href]="enlaceMapa(c.entrega)">Cómo llegar</a>
+          </div>
+          <div class="card-actions">
+            <button type="button" class="btn-main" *ngIf="c.estado === 'PROGRAMADO'"
+                    [disabled]="procesandoCambio === c.id_cambio" (click)="salirACambio(c)">
+              Salir a hacer el cambio
+            </button>
+            <ng-container *ngIf="c.estado === 'EN_CAMINO'">
+              <label class="check">
+                <input type="checkbox" [(ngModel)]="condiciones[c.id_cambio]">
+                La prenda devuelta está sin uso y con etiqueta
+              </label>
+              <button type="button" class="btn-main"
+                      [disabled]="procesandoCambio === c.id_cambio || !condiciones[c.id_cambio]"
+                      (click)="completarCambio(c)">Completar cambio</button>
+            </ng-container>
+            <span class="muted-text" *ngIf="c.estado === 'SOLICITADO'">
+              Pendiente de aprobación en Punto de Venta &gt; Cambios de prenda.
+            </span>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- NUEVO (CU12): recojo de devoluciones -->
+      <ng-container *ngIf="vista === 'DEVOLUCIONES'">
+        <div class="filters">
+          <button type="button" *ngFor="let f of filtrosRecojo"
+                  [class.active]="filtroRecojo === f.valor" (click)="filtroRecojo = f.valor">
+            {{ f.texto }}
+          </button>
+        </div>
+        <p class="msg-ok" *ngIf="mensaje">{{ mensaje }}</p>
+        <p class="msg-error" *ngIf="error">{{ error }}</p>
+        <div class="empty" *ngIf="recojosVisibles.length === 0">
+          <p>No hay devoluciones en esta lista.</p>
+        </div>
+        <div class="delivery-card" *ngFor="let d of recojosVisibles; trackBy: porDevolucion" [class.atrasado]="d.atrasado">
+          <div class="card-head">
+            <div>
+              <strong>Devolución {{ d.numero_nota }}</strong>
+              <span class="muted">{{ d.origen?.etiqueta }} · {{ d.sucursal }}</span>
+            </div>
+            <span class="badge" [ngClass]="'estado-' + d.estado.toLowerCase()">{{ d.estado_display }}</span>
+          </div>
+          <div class="card-body">
+            <p><strong>Cliente:</strong> {{ d.cliente }}
+              <span *ngIf="d.cliente_contacto?.telefono"> · Tel. {{ d.cliente_contacto.telefono }}</span></p>
+            <p *ngIf="d.entrega"><strong>Dirección:</strong> {{ d.entrega.direccion }}
+              <span *ngIf="d.entrega.referencia">({{ d.entrega.referencia }})</span></p>
+            <p class="recoger" *ngFor="let i of d.items">
+              <strong>Recoger:</strong> {{ i.cantidad }} x {{ i.variante }} ({{ i.motivo_display }})
+            </p>
+            <p><strong>Se le devuelve:</strong> Bs {{ d.monto_reembolso }} ({{ d.metodo_reembolso_display }})</p>
+            <p *ngIf="d.fecha_programada"><strong>Recojo:</strong> {{ d.fecha_programada | date:'dd/MM/yyyy HH:mm' }}
+              · límite {{ d.fecha_limite | date:'dd/MM/yyyy HH:mm' }}
+              <span class="tag-atrasado" *ngIf="d.atrasado">Atrasado</span></p>
+            <p *ngIf="esGestor"><strong>Repartidor:</strong> {{ d.repartidor || 'Sin asignar' }}</p>
+            <p *ngIf="d.observacion" class="muted-text">Comentario: {{ d.observacion }}</p>
+            <a class="map-link" target="_blank" rel="noopener" *ngIf="d.entrega"
+               [href]="enlaceMapa(d.entrega)">Cómo llegar</a>
+          </div>
+          <div class="card-actions">
+            <button type="button" class="btn-main" *ngIf="d.estado === 'PROGRAMADA'"
+                    [disabled]="procesandoRecojo === d.id_devolucion" (click)="salirARecoger(d)">
+              Salir a recoger
+            </button>
+            <ng-container *ngIf="d.estado === 'EN_CAMINO'">
+              <label class="check">
+                <input type="checkbox" [(ngModel)]="revisadas[d.id_devolucion]">
+                Revisé la prenda: sin uso y con etiqueta (si está dañada, el defecto no es por mal uso)
+              </label>
+              <button type="button" class="btn-main"
+                      [disabled]="procesandoRecojo === d.id_devolucion || !revisadas[d.id_devolucion]"
+                      (click)="completarRecojo(d)">Completar devolución</button>
+            </ng-container>
+            <span class="muted-text" *ngIf="d.estado === 'SOLICITADA'">
+              Pendiente de aprobación en Punto de Venta &gt; Devoluciones.
+            </span>
+          </div>
+        </div>
+      </ng-container>
     </div>
   `,
   styles: [`
@@ -121,6 +264,33 @@ const ROLES_GESTION = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
     .btn-main { background: #0f3460; color: white; border: 1px solid #0f3460; }
     .btn-sec { background: white; color: #0f3460; border: 1px solid #0f3460; }
     button:disabled { opacity: 0.5; cursor: default; }
+    .tabs { display: flex; gap: 0.25rem; border-bottom: 2px solid #e0e0e0; margin-bottom: 1rem; }
+    .tabs button {
+      padding: 0.6rem 1rem; border: none; background: none; cursor: pointer;
+      font-weight: 600; color: #777; border-bottom: 3px solid transparent; margin-bottom: -2px;
+    }
+    .tabs button.active { color: #0f3460; border-bottom-color: #0f3460; }
+    .tab-count {
+      margin-left: 0.35rem; padding: 0.05rem 0.5rem; border-radius: 999px;
+      background: #0f3460; color: white; font-size: 0.75rem;
+    }
+    .delivery-card.atrasado { border-left: 4px solid #c0392b; }
+    .badge.estado-programado { background: #e3f2fd; color: #0d47a1; }
+    .badge.estado-completado { background: #e8f8f0; color: #1b7f4b; }
+    .badge.estado-rechazado { background: #fdecea; color: #c62828; }
+    .badge.estado-solicitado { background: #fff8e1; color: #8a6d00; }
+    .badge.estado-solicitada { background: #fff8e1; color: #8a6d00; }
+    .badge.estado-programada { background: #e3f2fd; color: #0d47a1; }
+    .badge.estado-completada { background: #e8f8f0; color: #1b7f4b; }
+    .badge.estado-rechazada { background: #fdecea; color: #c62828; }
+    .recoger { color: #c0392b !important; }
+    .entregar { color: #1b7f4b !important; font-weight: 600; }
+    .tag-atrasado {
+      margin-left: 0.4rem; padding: 0.05rem 0.5rem; border-radius: 999px;
+      background: #fdecea; color: #c0392b; font-size: 0.75rem; font-weight: 700;
+    }
+    .muted-text { color: #888; font-size: 0.85rem; }
+    .check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; }
   `]
 })
 export class DeliveriesPageComponent implements OnInit, OnDestroy {
@@ -133,6 +303,28 @@ export class DeliveriesPageComponent implements OnInit, OnDestroy {
   procesando: number | null = null;
   esGestor = false;
   filtro = '';
+  // NUEVO (CU05): cambios de prenda con delivery.
+  vista: 'ENTREGAS' | 'CAMBIOS' | 'DEVOLUCIONES' = 'ENTREGAS';
+  cambios: any[] = [];
+  filtroCambio = 'POR_HACER';
+  procesandoCambio: number | null = null;
+  condiciones: { [idCambio: number]: boolean } = {};
+  filtrosCambio = [
+    { valor: 'POR_HACER', texto: 'Por hacer' },
+    { valor: 'COMPLETADO', texto: 'Completados' },
+    { valor: '', texto: 'Todos' }
+  ];
+
+  // NUEVO (CU12): recojo de devoluciones.
+  recojos: any[] = [];
+  filtroRecojo = 'POR_HACER';
+  procesandoRecojo: number | null = null;
+  revisadas: { [idDevolucion: number]: boolean } = {};
+  filtrosRecojo = [
+    { valor: 'POR_HACER', texto: 'Por recoger' },
+    { valor: 'COMPLETADA', texto: 'Completadas' },
+    { valor: '', texto: 'Todas' }
+  ];
 
   filtros = [
     { valor: '', texto: 'Todas' },
@@ -144,7 +336,12 @@ export class DeliveriesPageComponent implements OnInit, OnDestroy {
 
   private destroy$ = new Subject<void>();
 
-  constructor(private api: ApiService, private auth: AuthService) {}
+  constructor(
+    private api: ApiService,
+    private auth: AuthService,
+    private cambiosService: CambiosService,
+    private devolucionesService: DevolucionesService
+  ) {}
 
   ngOnInit(): void {
     this.esGestor = this.auth.obtenerRoles().some((r) => ROLES_GESTION.includes(r));
@@ -155,7 +352,11 @@ export class DeliveriesPageComponent implements OnInit, OnDestroy {
       });
     }
     // Consulta al abrir y luego cada 10 segundos.
-    timer(0, 10000).pipe(takeUntil(this.destroy$)).subscribe(() => this.cargar());
+    timer(0, 10000).pipe(takeUntil(this.destroy$)).subscribe(() => {
+      this.cargar();
+      this.cargarCambios();
+      this.cargarRecojos();
+    });
   }
 
   ngOnDestroy(): void {
@@ -235,5 +436,133 @@ export class DeliveriesPageComponent implements OnInit, OnDestroy {
   // Enlace a Google Maps con la ruta hasta el punto de entrega (no requiere clave).
   enlaceMapa(d: any): string {
     return `https://www.google.com/maps/dir/?api=1&destination=${d.latitud},${d.longitud}`;
+  }
+
+  // ---------------------------------------------------------------- CU05 cambios de prenda
+  cambiarVista(vista: 'ENTREGAS' | 'CAMBIOS' | 'DEVOLUCIONES'): void {
+    this.vista = vista;
+    this.mensaje = null;
+    this.error = null;
+  }
+
+  porCambio(_: number, c: any): number {
+    return c.id_cambio;
+  }
+
+  // Cambios con delivery visibles para el usuario (el repartidor, solo los suyos).
+  cargarCambios(): void {
+    this.cambiosService.listar({ modalidad: 'DELIVERY', page_size: 100 }).subscribe({
+      next: (data: any) => this.cambios = data?.results || data || [],
+      error: () => this.cambios = []
+    });
+  }
+
+  get cambiosPorHacer(): number {
+    return this.cambios.filter((c) => c.estado === 'PROGRAMADO' || c.estado === 'EN_CAMINO').length;
+  }
+
+  get cambiosVisibles(): any[] {
+    if (this.filtroCambio === 'POR_HACER') {
+      return this.cambios.filter((c) => c.estado === 'PROGRAMADO' || c.estado === 'EN_CAMINO');
+    }
+    if (this.filtroCambio) {
+      return this.cambios.filter((c) => c.estado === this.filtroCambio);
+    }
+    return this.cambios;
+  }
+
+  salirACambio(c: any): void {
+    this.procesandoCambio = c.id_cambio;
+    this.mensaje = null;
+    this.error = null;
+    this.cambiosService.enCamino(c.id_cambio).subscribe({
+      next: () => {
+        this.procesandoCambio = null;
+        this.mensaje = `Cambio ${c.numero_nota} en camino.`;
+        this.cargarCambios();
+      },
+      error: (err) => {
+        this.procesandoCambio = null;
+        this.error = err?.error?.error || err?.error?.detail || 'No se pudo actualizar el cambio.';
+      }
+    });
+  }
+
+  completarCambio(c: any): void {
+    this.procesandoCambio = c.id_cambio;
+    this.mensaje = null;
+    this.error = null;
+    this.cambiosService.completar(c.id_cambio, !!this.condiciones[c.id_cambio]).subscribe({
+      next: () => {
+        this.procesandoCambio = null;
+        this.mensaje = `Cambio ${c.numero_nota} completado. Se generó la nota de devolución.`;
+        this.cargarCambios();
+      },
+      error: (err) => {
+        this.procesandoCambio = null;
+        this.error = err?.error?.error || err?.error?.detail || 'No se pudo completar el cambio.';
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- CU12 recojo de devoluciones
+  porDevolucion(_: number, d: any): number {
+    return d.id_devolucion;
+  }
+
+  // Devoluciones con recojo visibles para el usuario (el repartidor, solo las suyas).
+  cargarRecojos(): void {
+    this.devolucionesService.listar({ modalidad: 'DELIVERY', page_size: 100 }).subscribe({
+      next: (data: any) => this.recojos = data?.results || data || [],
+      error: () => this.recojos = []
+    });
+  }
+
+  get recojosPorHacer(): number {
+    return this.recojos.filter((d) => d.estado === 'PROGRAMADA' || d.estado === 'EN_CAMINO').length;
+  }
+
+  get recojosVisibles(): any[] {
+    if (this.filtroRecojo === 'POR_HACER') {
+      return this.recojos.filter((d) => d.estado === 'PROGRAMADA' || d.estado === 'EN_CAMINO');
+    }
+    if (this.filtroRecojo) {
+      return this.recojos.filter((d) => d.estado === this.filtroRecojo);
+    }
+    return this.recojos;
+  }
+
+  salirARecoger(d: any): void {
+    this.procesandoRecojo = d.id_devolucion;
+    this.mensaje = null;
+    this.error = null;
+    this.devolucionesService.enCamino(d.id_devolucion).subscribe({
+      next: () => {
+        this.procesandoRecojo = null;
+        this.mensaje = `Devolución ${d.numero_nota} en camino.`;
+        this.cargarRecojos();
+      },
+      error: (err) => {
+        this.procesandoRecojo = null;
+        this.error = err?.error?.error || err?.error?.detail || 'No se pudo actualizar la devolución.';
+      }
+    });
+  }
+
+  completarRecojo(d: any): void {
+    this.procesandoRecojo = d.id_devolucion;
+    this.mensaje = null;
+    this.error = null;
+    this.devolucionesService.completar(d.id_devolucion, !!this.revisadas[d.id_devolucion]).subscribe({
+      next: (actualizada) => {
+        this.procesandoRecojo = null;
+        this.mensaje = `Devolución ${d.numero_nota} completada: se devolvió Bs ${actualizada.monto_reembolso} al cliente.`;
+        this.cargarRecojos();
+      },
+      error: (err) => {
+        this.procesandoRecojo = null;
+        this.error = err?.error?.error || err?.error?.detail || 'No se pudo completar la devolución.';
+      }
+    });
   }
 }

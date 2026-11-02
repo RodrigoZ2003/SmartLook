@@ -1,7 +1,18 @@
 # backend/apps/reservations/serializers.py
+# MODIFICADO (Fase 2 - reservas con anticipo): pago (anticipo o total),
+# saldo, vencimiento y nota de devolución (NR-000001) de la reserva.
+# Paso 4: opciones de pago (anticipo o total) y lo que se devolvería al cancelar.
+from decimal import ROUND_HALF_UP, Decimal
+
+from django.utils import timezone
 from rest_framework import serializers
 from apps.catalog.models import Sucursal, ProductoVariante
-from .models import FittingReservation, FittingReservationItem
+from .models import PORCENTAJE_RETENCION, FittingReservation, FittingReservationItem
+
+
+def _centavos(valor):
+    """Redondea a centavos (igual que apps/reservations/pagos.py)."""
+    return Decimal(valor).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 class FittingReservationItemSerializer(serializers.ModelSerializer):
@@ -15,8 +26,9 @@ class FittingReservationItemSerializer(serializers.ModelSerializer):
         # NUEVO (vínculo reserva-venta): "estado" (PENDIENTE/COMPRADO/
         # DEVUELTO) expuesto de solo lectura, para que web/mobile puedan
         # mostrar qué pasó con cada prenda de la reserva.
-        fields = ["id_item", "variante", "id_variante", "estado"]
-        read_only_fields = ["estado"]
+        # NUEVO (Fase 2 - reservas con anticipo): precio congelado al reservar.
+        fields = ["id_item", "variante", "id_variante", "estado", "precio_unitario"]
+        read_only_fields = ["estado", "precio_unitario"]
 
 
 class FittingReservationSerializer(serializers.ModelSerializer):
@@ -37,6 +49,16 @@ class FittingReservationSerializer(serializers.ModelSerializer):
     # "items" no lleva source: coincide a propósito con el related_name="items"
     # puesto en FittingReservationItem.id_reserva.
     items = FittingReservationItemSerializer(many=True)
+    # NUEVO (Fase 2 - reservas con anticipo): pago, saldo, vencimiento y nota.
+    estado_display = serializers.CharField(source="get_estado_display", read_only=True)
+    tipo_pago_display = serializers.CharField(source="get_tipo_pago_display", read_only=True)
+    saldo = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    numero_nota = serializers.CharField(read_only=True)
+    porcentaje_retencion = serializers.SerializerMethodField()
+    puede_cancelar = serializers.SerializerMethodField()
+    puede_pagar = serializers.SerializerMethodField()
+    opciones_pago = serializers.SerializerMethodField()
+    cancelacion = serializers.SerializerMethodField()
 
     class Meta:
         model = FittingReservation
@@ -50,16 +72,82 @@ class FittingReservationSerializer(serializers.ModelSerializer):
             "fecha_reserva",
             "hora_reserva",
             "estado",
+            "estado_display",
             "fecha_creacion",
             "items",
+            "tipo_pago",
+            "tipo_pago_display",
+            "porcentaje_anticipo",
+            "monto_total",
+            "monto_a_pagar",
+            "monto_pagado",
+            "saldo",
+            "fecha_pago",
+            "fecha_limite_pago",
+            "fecha_vencimiento",
+            "numero_nota",
+            "porcentaje_retencion",
+            "monto_retenido",
+            "monto_devuelto",
+            "referencia_reembolso",
+            "motivo_cierre",
+            "fecha_cierre",
+            "puede_cancelar",
+            "puede_pagar",
+            "opciones_pago",
+            "cancelacion",
         ]
-        read_only_fields = ["estado"]
+        read_only_fields = [
+            "estado", "tipo_pago", "porcentaje_anticipo", "monto_total", "monto_a_pagar",
+            "monto_pagado", "fecha_pago", "fecha_limite_pago", "fecha_vencimiento",
+            "monto_retenido", "monto_devuelto", "referencia_reembolso", "motivo_cierre",
+            "fecha_cierre",
+        ]
 
     def validate_items(self, value):
         """La reserva debe tener al menos una prenda."""
         if not value:
             raise serializers.ValidationError("La reserva debe incluir al menos una prenda.")
         return value
+
+    def get_porcentaje_retencion(self, obj):
+        """Porcentaje del precio total que se retiene si vence o se cancela."""
+        return PORCENTAJE_RETENCION
+
+    def get_puede_cancelar(self, obj):
+        """True si la reserva sigue abierta (el cliente puede cancelarla)."""
+        return obj.estado in ("PENDIENTE", "PENDIENTE_PAGO", "CONFIRMADA")
+
+    def get_puede_pagar(self, obj):
+        """True si la reserva espera el pago y todavía está dentro del plazo."""
+        return bool(
+            obj.estado == "PENDIENTE_PAGO"
+            and (obj.fecha_limite_pago is None or timezone.now() <= obj.fecha_limite_pago)
+        )
+
+    def get_opciones_pago(self, obj):
+        """Montos del anticipo (porcentaje de la empresa) y del total, si se puede pagar."""
+        if not self.get_puede_pagar(obj) or obj.monto_total is None:
+            return []
+        porcentaje = obj.id_empresa.porcentaje_anticipo if obj.id_empresa_id else Decimal("50")
+        return [
+            {
+                "tipo": "ANTICIPO",
+                "porcentaje": porcentaje,
+                "monto": _centavos(obj.monto_total * porcentaje / 100),
+            },
+            {"tipo": "TOTAL", "porcentaje": Decimal("100"), "monto": _centavos(obj.monto_total)},
+        ]
+
+    def get_cancelacion(self, obj):
+        """Lo que se devolvería si el cliente cancela ahora (CU17): pagado menos el 10%."""
+        if not self.get_puede_cancelar(obj):
+            return None
+        pagado = obj.monto_pagado or Decimal("0")
+        retenido = Decimal("0")
+        if pagado > 0:
+            retenido = min(_centavos((obj.monto_total or 0) * PORCENTAJE_RETENCION / 100), pagado)
+        return {"pagado": pagado, "retenido": retenido, "devuelto": pagado - retenido}
 
     def validate(self, attrs):
         """SaaS: todas las prendas deben ser de la misma empresa que la sucursal."""

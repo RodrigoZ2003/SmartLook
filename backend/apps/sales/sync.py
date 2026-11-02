@@ -2,15 +2,19 @@
 
 Flujo:
 1. Sin internet, el dispositivo (web PWA o móvil) guarda cada venta en su
-   cola local con un UUID propio y el estado PENDIENTE.
+   cola local con un UUID propio, los precios que cobró y el estado PENDIENTE.
 2. Al reconectarse envía la cola a POST /api/sales/sync/ventas-pos/.
 3. El servidor procesa cada operación por separado y responde un estado:
-   - SINCRONIZADA: la venta se registró (stock descontado, bitácora).
+   - SINCRONIZADA: la venta se registró sin problemas (stock descontado).
+   - EN_CONFLICTO: (Fase 2 - CU08) la venta se registró con lo cobrado sin
+                   conexión, pero el precio no coincide con el del servidor
+                   o ya no había stock; queda para que el personal la revise
+                   (ver apps/sales/conflictos.py).
    - DUPLICADA:    ese UUID ya se había sincronizado; NO se registra de
                    nuevo (idempotencia) y se devuelve la venta original.
-   - RECHAZADA:    no se pudo registrar (ej. ya no hay stock); se guarda
-                   el motivo para que el personal lo revise.
-   El dispositivo quita de su cola las SINCRONIZADAS y DUPLICADAS.
+   - RECHAZADA:    los datos no son válidos (prenda inexistente, sucursal
+                   ajena, método de pago inválido); se guarda el motivo.
+   El dispositivo deja de reenviar las SINCRONIZADAS, EN_CONFLICTO y DUPLICADAS.
 
 Cada operación se procesa en su propia transacción: si una falla, las
 demás del mismo lote siguen. Dos envíos simultáneos del mismo UUID no
@@ -24,8 +28,10 @@ from django.db.models import F
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from .models import PosSale, SyncOperacion
-from .services import PosSaleService
+from apps.users_auth.models import Cliente
+
+from .conflictos import ConflictoService, leer_precio, resumen_conflicto, tipo_de_conflicto
+from .models import SyncOperacion
 
 MAX_OPERACIONES_POR_LOTE = 100
 METODOS_PAGO = ("EFECTIVO", "TARJETA", "QR")
@@ -44,6 +50,8 @@ def _resultado(uuid, estado, mensaje=None, operacion=None):
         "mensaje": mensaje,
         "id_venta": venta.id_venta if venta else None,
         "total": str(venta.total) if venta else None,
+        "tipo_conflicto": operacion.tipo_conflicto if operacion else None,
+        "conflictos": (operacion.detalle_conflicto or []) if operacion else [],
     }
 
 
@@ -81,7 +89,7 @@ def _leer_fecha(valor):
 
 
 def _leer_items(items):
-    """Normaliza las prendas de la venta y valida sus cantidades."""
+    """Normaliza las prendas de la venta y valida cantidades y precios cobrados."""
     if not isinstance(items, list) or not items:
         raise DatosInvalidos("La venta debe tener al menos una prenda.")
     normalizados = []
@@ -99,8 +107,27 @@ def _leer_items(items):
             raise DatosInvalidos("Prenda inválida.")
         if not str(cantidad).isdigit() or int(cantidad) < 1:
             raise DatosInvalidos("La cantidad de cada prenda debe ser al menos 1.")
-        normalizados.append({"id_variante": int(id_variante), "cantidad": int(cantidad)})
+        normalizados.append({
+            "id_variante": int(id_variante),
+            "cantidad": int(cantidad),
+            # NUEVO (CU08): precio cobrado sin conexión (opcional para
+            # dispositivos que aún no lo envían: se usa el del servidor).
+            "precio_unitario": leer_precio(item.get("precio_unitario")),
+        })
     return normalizados
+
+
+def _leer_cliente(correo):
+    """Cliente opcional de la venta, buscado por correo. Devuelve (cliente, aviso)."""
+    correo = (correo or "").strip() if isinstance(correo, str) else ""
+    if not correo:
+        return None, ""
+    cliente = Cliente.objects.select_related("id_usuario").filter(
+        id_usuario__correo__iexact=correo
+    ).first()
+    if cliente is None:
+        return None, f" Cliente {correo} no encontrado: la venta quedó sin cliente."
+    return cliente, ""
 
 
 class SyncService:
@@ -157,6 +184,7 @@ class SyncService:
                     datos={
                         "id_sucursal": id_sucursal,
                         "metodo_pago": datos.get("metodo_pago"),
+                        "correo_cliente": datos.get("correo_cliente"),
                         "items": datos.get("items"),
                     },
                     fecha_operacion=_leer_fecha(datos.get("fecha_operacion")),
@@ -166,15 +194,23 @@ class SyncService:
                 SyncOperacion.objects.select_related("id_venta").get(uuid=uuid)
             )
 
-        # 4) Se registra la venta con la misma lógica que una venta en línea.
+        # 4) Se registra la venta con lo cobrado sin conexión, detectando
+        #    conflictos de precio y de stock (CU08).
         try:
             if sucursal is None:
                 raise DatosInvalidos("Sucursal no encontrada.")
             metodo_pago = datos.get("metodo_pago")
             if metodo_pago not in METODOS_PAGO:
                 raise DatosInvalidos("Método de pago inválido.")
-            venta = PosSaleService.registrar_venta(
-                usuario, sucursal, _leer_items(datos.get("items")), metodo_pago
+            items = _leer_items(datos.get("items"))
+            cliente, aviso_cliente = _leer_cliente(datos.get("correo_cliente"))
+            venta, detalle = ConflictoService.registrar_venta_offline(
+                usuario,
+                sucursal,
+                items,
+                metodo_pago,
+                cliente=cliente,
+                fecha_venta=operacion.fecha_operacion,
             )
         except (DatosInvalidos, ValueError) as exc:
             operacion.estado = "RECHAZADA"
@@ -182,10 +218,16 @@ class SyncService:
             operacion.save(update_fields=["estado", "mensaje"])
             return _resultado(uuid, "RECHAZADA", operacion.mensaje)
 
-        # La venta conserva la hora en que se hizo sin conexión (reportes correctos).
-        if operacion.fecha_operacion:
-            PosSale.objects.filter(pk=venta.pk).update(fecha_venta=operacion.fecha_operacion)
-        operacion.estado = "SINCRONIZADA"
         operacion.id_venta = venta
-        operacion.save(update_fields=["estado", "id_venta"])
-        return _resultado(uuid, "SINCRONIZADA", "Venta registrada.", operacion)
+        if detalle:
+            operacion.estado = "EN_CONFLICTO"
+            operacion.tipo_conflicto = tipo_de_conflicto(detalle)
+            operacion.detalle_conflicto = detalle
+            operacion.mensaje = (resumen_conflicto(detalle) + aviso_cliente)[:255]
+        else:
+            operacion.estado = "SINCRONIZADA"
+            operacion.mensaje = ("Venta registrada." + aviso_cliente)[:255]
+        operacion.save(update_fields=[
+            "estado", "id_venta", "tipo_conflicto", "detalle_conflicto", "mensaje",
+        ])
+        return _resultado(uuid, operacion.estado, operacion.mensaje, operacion)

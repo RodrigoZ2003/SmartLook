@@ -1,0 +1,311 @@
+<!-- web/src/app/modules/pos/pages/cambios-prenda/cambios-prenda.component.html -->
+<!-- NUEVO (Fase 2 - CU05 / CU06): cambio de prenda por talla o color -->
+<div class="cambios-container">
+  <div class="cabecera">
+    <div>
+      <h2>Cambios de prenda</h2>
+      <p class="subtitulo">Cambio por talla o color dentro de los 7 días, con nota de devolución.</p>
+    </div>
+    <a routerLink="/pos" class="btn-volver">Volver al Punto de Venta</a>
+  </div>
+
+  <div class="pestanas">
+    <button type="button" [class.activa]="pestana === 'SEGUIMIENTO'" (click)="cambiarPestana('SEGUIMIENTO')">Seguimiento</button>
+    <button type="button" [class.activa]="pestana === 'TIENDA'" (click)="cambiarPestana('TIENDA')">Registrar en tienda</button>
+    <button type="button" [class.activa]="pestana === 'MES'" (click)="cambiarPestana('MES')">Consulta del mes</button>
+  </div>
+
+  <p class="aviso aviso--ok" *ngIf="mensaje">{{ mensaje }}</p>
+  <p class="aviso aviso--error" *ngIf="error">{{ error }}</p>
+
+  <!-- ============================================================ SEGUIMIENTO -->
+  <section *ngIf="pestana === 'SEGUIMIENTO'">
+    <div class="filtros">
+      <button type="button" *ngFor="let e of estados" class="chip" [class.activa]="filtroEstado === e.valor"
+              (click)="filtrarEstado(e.valor)">{{ e.texto }}</button>
+      <select [(ngModel)]="filtroModalidad" (change)="cargarSeguimiento()" aria-label="Modalidad">
+        <option value="">Tienda y delivery</option>
+        <option value="DELIVERY">Solo delivery</option>
+        <option value="TIENDA">Solo en tienda</option>
+      </select>
+    </div>
+
+    <div class="vacio" *ngIf="cargando">Cargando...</div>
+    <div class="vacio" *ngIf="!cargando && cambios.length === 0">No hay cambios en esta lista.</div>
+
+    <div class="cambio" *ngFor="let c of cambios" [class.cambio--atrasado]="c.atrasado">
+      <div class="cambio-cabecera">
+        <div>
+          <strong>{{ c.numero_nota }}</strong>
+          <span class="muted">{{ c.origen?.etiqueta }} · {{ c.sucursal }} · {{ c.modalidad_display }}</span>
+        </div>
+        <span class="estado" [ngClass]="claseEstado(c)">{{ c.estado_display }}</span>
+      </div>
+      <div class="cambio-cuerpo">
+        <p><strong>Cliente:</strong> {{ c.cliente?.nombre || 'Sin cliente' }}
+          <span *ngIf="c.cliente?.telefono"> · Tel. {{ c.cliente.telefono }}</span></p>
+        <p><strong>Motivo:</strong> {{ c.motivo_display }}</p>
+        <p class="prendas">
+          <span class="devuelve">Devuelve: {{ c.prenda_devuelta }}</span>
+          <span class="flecha">→</span>
+          <span class="recibe">Recibe: {{ c.prenda_entregada }}</span>
+          <span class="muted">({{ c.cantidad }} u.)</span>
+        </p>
+        <p *ngIf="c.entrega"><strong>Dirección:</strong> {{ c.entrega.direccion }}
+          <span *ngIf="c.entrega.referencia">({{ c.entrega.referencia }})</span></p>
+        <p *ngIf="c.observacion"><strong>Observación:</strong> {{ c.observacion }}</p>
+        <p *ngIf="c.repartidor"><strong>Repartidor:</strong> {{ c.repartidor }} ·
+          visita {{ c.fecha_programada | date:'dd/MM/yyyy HH:mm' }} ·
+          límite {{ c.fecha_limite | date:'dd/MM/yyyy HH:mm' }}
+          <span class="tag-atrasado" *ngIf="c.atrasado">Atrasado</span></p>
+        <p *ngIf="c.motivo_rechazo" class="rechazo"><strong>Rechazado:</strong> {{ c.motivo_rechazo }}</p>
+        <p class="muted">Solicitado el {{ c.fecha_solicitud | date:'dd/MM/yyyy HH:mm' }}
+          <span *ngIf="c.solicitado_por"> por {{ c.solicitado_por }}</span></p>
+      </div>
+
+      <div class="cambio-acciones">
+        <button type="button" class="btn-sec" *ngIf="c.estado === 'COMPLETADO'" (click)="verNota(c)">Ver nota de devolución</button>
+        <ng-container *ngIf="esGestor && c.estado === 'SOLICITADO' && accion?.id !== c.id_cambio">
+          <button type="button" class="btn-main" (click)="abrirAccion(c, 'APROBAR')">Aprobar y asignar repartidor</button>
+          <button type="button" class="btn-peligro" (click)="abrirAccion(c, 'RECHAZAR')">Rechazar</button>
+        </ng-container>
+        <button type="button" class="btn-peligro"
+                *ngIf="esGestor && (c.estado === 'PROGRAMADO' || c.estado === 'EN_CAMINO') && accion?.id !== c.id_cambio"
+                (click)="abrirAccion(c, 'RECHAZAR')">Rechazar</button>
+      </div>
+
+      <!-- Aprobar: repartidor y fecha de visita -->
+      <div class="panel-accion" *ngIf="accion?.id === c.id_cambio && accion?.tipo === 'APROBAR'">
+        <div class="campo">
+          <label [attr.for]="'rep-' + c.id_cambio">Repartidor</label>
+          <select [id]="'rep-' + c.id_cambio" [(ngModel)]="aprobacion.id_repartidor">
+            <option [ngValue]="null">-- Elige --</option>
+            <option *ngFor="let r of repartidores" [ngValue]="r.id_usuario">{{ r.nombre }}</option>
+          </select>
+        </div>
+        <div class="campo">
+          <label [attr.for]="'fecha-' + c.id_cambio">Fecha y hora de la visita (máximo 48 h)</label>
+          <input [id]="'fecha-' + c.id_cambio" type="datetime-local" [(ngModel)]="aprobacion.fecha"
+                 [min]="fechaMinima" [max]="fechaMaxima" />
+        </div>
+        <p class="nota-stock" *ngIf="c.motivo === 'ERROR_TIENDA'">
+          Al aprobar se corrige el inventario: se descuenta {{ c.prenda_devuelta }}, que salió por error.
+        </p>
+        <p class="nota-stock" *ngIf="c.motivo === 'NO_LE_QUEDA'">
+          Al aprobar se aparta {{ c.prenda_entregada }} (se descuenta del stock).
+        </p>
+        <div class="botones">
+          <button type="button" class="btn-main" [disabled]="procesando" (click)="aprobar(c)">
+            {{ procesando ? 'Guardando...' : 'Confirmar visita' }}
+          </button>
+          <button type="button" class="btn-sec" [disabled]="procesando" (click)="cerrarAccion()">Cancelar</button>
+        </div>
+      </div>
+
+      <!-- Rechazar -->
+      <div class="panel-accion" *ngIf="accion?.id === c.id_cambio && accion?.tipo === 'RECHAZAR'">
+        <div class="campo campo--ancho">
+          <label [attr.for]="'rech-' + c.id_cambio">Motivo del rechazo</label>
+          <input [id]="'rech-' + c.id_cambio" type="text" [(ngModel)]="motivoRechazo"
+                 placeholder="Ej.: la prenda tiene uso / fuera de plazo" />
+        </div>
+        <p class="nota-stock" *ngIf="c.estado !== 'SOLICITADO'">Lo que se descontó al aprobar vuelve al stock.</p>
+        <div class="botones">
+          <button type="button" class="btn-peligro" [disabled]="procesando" (click)="rechazar(c)">
+            {{ procesando ? 'Guardando...' : 'Confirmar rechazo' }}
+          </button>
+          <button type="button" class="btn-sec" [disabled]="procesando" (click)="cerrarAccion()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ REGISTRAR EN TIENDA -->
+  <section *ngIf="pestana === 'TIENDA'">
+    <form class="buscador" (ngSubmit)="buscarCompra()">
+      <select name="tipo" [(ngModel)]="tipoCompra" aria-label="Tipo de compra">
+        <option value="VENTA">Venta en tienda (POS)</option>
+        <option value="PEDIDO">Pedido en línea</option>
+      </select>
+      <input name="numero" type="number" min="1" [(ngModel)]="numeroCompra" placeholder="Número (ej.: 120)" />
+      <button type="submit" class="btn-main" [disabled]="buscandoCompra">
+        {{ buscandoCompra ? 'Buscando...' : 'Buscar' }}
+      </button>
+    </form>
+
+    <div class="compra" *ngIf="compra">
+      <h3>{{ compra.etiqueta }} · {{ compra.sucursal }}</h3>
+      <p class="muted">{{ compra.fecha | date:'dd/MM/yyyy HH:mm' }} · {{ compra.entrega }}
+        <span *ngIf="compra.cliente"> · Cliente: {{ compra.cliente.nombre }}</span></p>
+      <table class="tabla">
+        <thead>
+          <tr>
+            <th>Prenda</th>
+            <th>Cant.</th>
+            <th>Precio</th>
+            <th>Plazo de cambio</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let i of compra.items" [class.seleccionada]="itemSel === i">
+            <td>{{ i.prenda }}</td>
+            <td>{{ i.cantidad }}</td>
+            <td>Bs {{ i.precio }}</td>
+            <td>hasta {{ i.vence | date:'dd/MM/yyyy HH:mm' }}</td>
+            <td>
+              <button type="button" class="btn-sec" *ngIf="!i.motivo_no_elegible" (click)="elegirItem(i)">Cambiar</button>
+              <span class="no-elegible" *ngIf="i.motivo_no_elegible">{{ i.motivo_no_elegible }}</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="formulario" *ngIf="itemSel">
+      <h3>Cambiar: {{ itemSel.prenda }}</h3>
+      <div class="vacio" *ngIf="cargandoOpciones">Cargando tallas y colores...</div>
+      <ng-container *ngIf="opciones">
+        <div class="motivos">
+          <label class="opcion">
+            <input type="radio" name="motivo" value="NO_LE_QUEDA" [(ngModel)]="form.motivo" (change)="cambiarMotivo()" />
+            No le quedó: quiere otra talla o color (mismo precio)
+          </label>
+          <label class="opcion">
+            <input type="radio" name="motivo" value="ERROR_TIENDA" [(ngModel)]="form.motivo" (change)="cambiarMotivo()" />
+            Error de la tienda: se le entregó otra talla o color
+          </label>
+        </div>
+        <div class="campo campo--ancho">
+          <label for="variante">
+            {{ form.motivo === 'ERROR_TIENDA' ? '¿Qué talla/color se le entregó por error?' : '¿Por cuál la cambia?' }}
+          </label>
+          <select id="variante" [(ngModel)]="form.id_variante">
+            <option [ngValue]="null">-- Elige --</option>
+            <option *ngFor="let a of alternativasValidas" [ngValue]="a.id_variante">
+              Talla {{ a.talla }} · {{ a.color }} · Bs {{ a.precio }} · stock {{ a.stock }}
+            </option>
+          </select>
+          <small class="ayuda" *ngIf="form.motivo === 'NO_LE_QUEDA' && alternativasValidas.length === 0">
+            No hay otra talla o color al mismo precio con stock en {{ opciones.sucursal }}.
+          </small>
+          <small class="ayuda" *ngIf="form.motivo === 'ERROR_TIENDA'">
+            El cliente devuelve la que se le entregó por error y recibe {{ itemSel.prenda }}.
+          </small>
+        </div>
+        <div class="campo" *ngIf="itemSel.cantidad > 1">
+          <label for="cantidad">Cantidad</label>
+          <input id="cantidad" type="number" min="1" [max]="itemSel.cantidad" [(ngModel)]="form.cantidad" />
+        </div>
+        <div class="campo campo--ancho">
+          <label for="obs">Observación (opcional)</label>
+          <input id="obs" type="text" [(ngModel)]="form.observacion" placeholder="Ej.: le quedaba ajustada" />
+        </div>
+        <label class="check">
+          <input type="checkbox" [(ngModel)]="form.condiciones_ok" />
+          La prenda devuelta está sin uso y con etiqueta
+        </label>
+        <div class="botones">
+          <button type="button" class="btn-main" [disabled]="registrando" (click)="registrar()">
+            {{ registrando ? 'Registrando...' : 'Registrar cambio' }}
+          </button>
+          <button type="button" class="btn-sec" [disabled]="registrando" (click)="cancelarItem()">Cancelar</button>
+        </div>
+      </ng-container>
+    </div>
+  </section>
+
+  <!-- ============================================================ CONSULTA DEL MES (CU06) -->
+  <section *ngIf="pestana === 'MES'">
+    <div class="buscador">
+      <label for="mes">Mes</label>
+      <input id="mes" type="month" [(ngModel)]="mes" />
+      <button type="button" class="btn-main" (click)="cargarMes()">Consultar</button>
+    </div>
+
+    <div class="tarjetas" *ngIf="resumen">
+      <div class="tarjeta"><span class="numero">{{ resumen.total }}</span><span>Cambios del mes</span></div>
+      <div class="tarjeta tarjeta--ok"><span class="numero">{{ resumen.completados }}</span><span>Completados</span></div>
+      <div class="tarjeta tarjeta--proceso"><span class="numero">{{ resumen.en_proceso }}</span><span>En proceso</span></div>
+      <div class="tarjeta tarjeta--rechazo"><span class="numero">{{ resumen.rechazados }}</span><span>Rechazados</span></div>
+    </div>
+
+    <div class="detalle-mes" *ngIf="resumen">
+      <div class="bloque">
+        <h4>Por motivo</h4>
+        <p>Error de la tienda: <strong>{{ cantidad(resumen.por_motivo, 'ERROR_TIENDA') }}</strong></p>
+        <p>No le quedó: <strong>{{ cantidad(resumen.por_motivo, 'NO_LE_QUEDA') }}</strong></p>
+      </div>
+      <div class="bloque">
+        <h4>Por modalidad</h4>
+        <p>En tienda: <strong>{{ cantidad(resumen.por_modalidad, 'TIENDA') }}</strong></p>
+        <p>Con delivery: <strong>{{ cantidad(resumen.por_modalidad, 'DELIVERY') }}</strong></p>
+      </div>
+      <div class="bloque">
+        <h4>Por sucursal</h4>
+        <p *ngFor="let s of resumen.por_sucursal">{{ s.sucursal }}: <strong>{{ s.total }}</strong></p>
+        <p class="muted" *ngIf="resumen.por_sucursal.length === 0">Sin cambios.</p>
+      </div>
+      <div class="bloque">
+        <h4>Prendas más cambiadas</h4>
+        <p *ngFor="let p of resumen.prendas_mas_cambiadas">{{ p.prenda }}: <strong>{{ p.total }}</strong></p>
+        <p class="muted" *ngIf="resumen.prendas_mas_cambiadas.length === 0">Sin cambios.</p>
+      </div>
+    </div>
+
+    <div class="vacio" *ngIf="cargandoMes">Cargando...</div>
+    <table class="tabla" *ngIf="!cargandoMes && cambiosMes.length > 0">
+      <thead>
+        <tr>
+          <th>Nota</th>
+          <th>Fecha</th>
+          <th>Sucursal</th>
+          <th>Devuelve → Recibe</th>
+          <th>Motivo</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let c of cambiosMes">
+          <td>{{ c.numero_nota }}</td>
+          <td>{{ c.fecha_solicitud | date:'dd/MM HH:mm' }}</td>
+          <td>{{ c.sucursal }}</td>
+          <td>{{ c.prenda_devuelta }} → {{ c.prenda_entregada }}</td>
+          <td>{{ c.motivo_display }}</td>
+          <td><span class="estado" [ngClass]="claseEstado(c)">{{ c.estado_display }}</span></td>
+          <td><button type="button" class="btn-link" (click)="verNota(c)">Ver</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="vacio" *ngIf="!cargandoMes && cambiosMes.length === 0">No hay cambios en este mes.</div>
+  </section>
+</div>
+
+<!-- ============================================================ NOTA DE DEVOLUCIÓN -->
+<div class="modal-fondo" *ngIf="nota" (click)="cerrarNota()">
+  <div class="modal" (click)="$event.stopPropagation()">
+    <h3>Nota de devolución {{ nota.numero_nota }}</h3>
+    <p class="estado-nota"><span class="estado" [ngClass]="claseEstado(nota)">{{ nota.estado_display }}</span></p>
+    <table class="tabla tabla--nota">
+      <tbody>
+        <tr><th>Origen</th><td>{{ nota.origen?.etiqueta }} · {{ nota.sucursal }}</td></tr>
+        <tr><th>Cliente</th><td>{{ nota.cliente?.nombre || 'Sin cliente' }}</td></tr>
+        <tr><th>Motivo</th><td>{{ nota.motivo_display }}</td></tr>
+        <tr><th>Modalidad</th><td>{{ nota.modalidad_display }}</td></tr>
+        <tr><th>Prenda devuelta</th><td>{{ nota.prenda_devuelta }} ({{ nota.cantidad }} u.)</td></tr>
+        <tr><th>Prenda entregada</th><td>{{ nota.prenda_entregada }} · Bs {{ nota.precio }}</td></tr>
+        <tr><th>Condiciones</th><td>{{ nota.condiciones_verificadas ? 'Sin uso y con etiqueta (verificado)' : 'Sin verificar' }}</td></tr>
+        <tr><th>Solicitado</th><td>{{ nota.fecha_solicitud | date:'dd/MM/yyyy HH:mm' }} · {{ nota.solicitado_por || '-' }}</td></tr>
+        <tr *ngIf="nota.aprobado_por"><th>Aprobado</th><td>{{ nota.fecha_aprobacion | date:'dd/MM/yyyy HH:mm' }} · {{ nota.aprobado_por }}</td></tr>
+        <tr *ngIf="nota.repartidor"><th>Repartidor</th><td>{{ nota.repartidor }}</td></tr>
+        <tr *ngIf="nota.completado_por"><th>Completado</th><td>{{ nota.fecha_completado | date:'dd/MM/yyyy HH:mm' }} · {{ nota.completado_por }}</td></tr>
+        <tr *ngIf="nota.observacion"><th>Observación</th><td>{{ nota.observacion }}</td></tr>
+        <tr *ngIf="nota.motivo_rechazo"><th>Rechazo</th><td>{{ nota.motivo_rechazo }}</td></tr>
+      </tbody>
+    </table>
+    <div class="botones">
+      <button type="button" class="btn-main" (click)="cerrarNota()">Cerrar</button>
+    </div>
+  </div>
+</div>

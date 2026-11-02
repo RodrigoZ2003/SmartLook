@@ -1,0 +1,230 @@
+<!-- web/src/app/modules/pos/pages/sync-operaciones/sync-operaciones.component.html -->
+<!-- NUEVO (Fase 2 - CU08): historial y conflictos de las ventas sin conexión -->
+<div class="sync-container">
+  <div class="sync-head">
+    <div>
+      <h2>Operaciones sin conexión</h2>
+      <p class="subtitulo">Ventas del POS hechas sin internet y su resultado al sincronizar.</p>
+    </div>
+    <a routerLink="/pos" class="btn-volver">Volver al Punto de Venta</a>
+  </div>
+
+  <!-- Resumen por estado (sirve también como atajo de filtro) -->
+  <div class="resumen" *ngIf="resumen">
+    <button type="button" class="tarjeta tarjeta--ok" (click)="filtrarPorEstado('SINCRONIZADA')">
+      <span class="numero">{{ resumen.SINCRONIZADA }}</span>
+      <span class="etiqueta">Sincronizadas</span>
+    </button>
+    <button type="button" class="tarjeta tarjeta--conflicto" (click)="filtrarPorEstado('EN_CONFLICTO', true)">
+      <span class="numero">{{ resumen.pendientes }}</span>
+      <span class="etiqueta">Conflictos pendientes</span>
+      <span class="extra">{{ resumen.EN_CONFLICTO }} en total</span>
+    </button>
+    <button type="button" class="tarjeta tarjeta--rechazada" (click)="filtrarPorEstado('RECHAZADA')">
+      <span class="numero">{{ resumen.RECHAZADA }}</span>
+      <span class="etiqueta">Rechazadas</span>
+    </button>
+  </div>
+
+  <!-- Filtros -->
+  <form class="filtros" (ngSubmit)="buscar()">
+    <div class="campo" *ngIf="esSuperAdmin">
+      <label for="f-empresa">Empresa</label>
+      <select id="f-empresa" name="empresa" [(ngModel)]="filtros.empresa" (change)="cambiarEmpresa()">
+        <option [ngValue]="null">Todas</option>
+        <option *ngFor="let e of empresas" [ngValue]="e.slug">{{ e.nombre }}</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label for="f-estado">Estado</label>
+      <select id="f-estado" name="estado" [(ngModel)]="filtros.estado">
+        <option value="">Todos</option>
+        <option value="SINCRONIZADA">Sincronizada</option>
+        <option value="EN_CONFLICTO">En conflicto</option>
+        <option value="RECHAZADA">Rechazada</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label for="f-tipo">Tipo de conflicto</label>
+      <select id="f-tipo" name="tipo_conflicto" [(ngModel)]="filtros.tipo_conflicto">
+        <option value="">Todos</option>
+        <option value="PRECIO">Precio distinto</option>
+        <option value="STOCK">Sin stock suficiente</option>
+        <option value="PRECIO_Y_STOCK">Precio y stock</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label for="f-sucursal">Sucursal</label>
+      <select id="f-sucursal" name="sucursal" [(ngModel)]="filtros.sucursal">
+        <option [ngValue]="null">Todas</option>
+        <option *ngFor="let s of sucursales" [ngValue]="s.id_sucursal">{{ s.nombre }}</option>
+      </select>
+    </div>
+    <div class="campo">
+      <label for="f-desde">Desde</label>
+      <input id="f-desde" name="desde" type="date" [(ngModel)]="filtros.desde" />
+    </div>
+    <div class="campo">
+      <label for="f-hasta">Hasta</label>
+      <input id="f-hasta" name="hasta" type="date" [(ngModel)]="filtros.hasta" />
+    </div>
+    <label class="check">
+      <input type="checkbox" name="pendientes" [(ngModel)]="filtros.pendientes" />
+      Solo conflictos sin resolver
+    </label>
+    <div class="acciones-filtro">
+      <button type="submit" class="btn btn-accent">Filtrar</button>
+      <button type="button" class="btn btn-secondary" (click)="limpiar()">Limpiar</button>
+    </div>
+  </form>
+
+  <p class="aviso aviso--ok" *ngIf="mensaje">{{ mensaje }}</p>
+  <p class="aviso aviso--error" *ngIf="error">{{ error }}</p>
+
+  <div class="estado-carga" *ngIf="cargando">Cargando...</div>
+  <div class="vacio" *ngIf="!cargando && operaciones.length === 0 && !error">
+    No hay operaciones con esos filtros.
+  </div>
+
+  <!-- Lista de operaciones -->
+  <div class="lista" *ngIf="!cargando && operaciones.length > 0">
+    <p class="conteo">{{ total }} operación(es)</p>
+    <div class="operacion" *ngFor="let op of operaciones"
+         [class.operacion--pendiente]="op.puede_resolver"
+         [class.operacion--abierta]="abierta === op.id_operacion">
+      <button type="button" class="operacion-cabecera" (click)="alternar(op)">
+        <div class="cabecera-info">
+          <strong>{{ op.sucursal || 'Sin sucursal' }}</strong>
+          <span>
+            Hecha sin conexión: {{ (op.fecha_operacion || op.fecha_recepcion) | date:'dd/MM/yyyy HH:mm' }}
+            · Recibida: {{ op.fecha_recepcion | date:'dd/MM/yyyy HH:mm' }}
+          </span>
+          <span>
+            Cajero: {{ op.usuario || '-' }}
+            <ng-container *ngIf="op.id_venta"> · Venta #{{ op.id_venta }} · Bs {{ op.venta?.total }}</ng-container>
+            <ng-container *ngIf="op.venta?.cliente"> · Cliente: {{ op.venta.cliente.nombre }}</ng-container>
+          </span>
+        </div>
+        <span class="estado" [ngClass]="claseEstado(op)">{{ textoEstado(op) }}</span>
+      </button>
+
+      <div class="operacion-detalle" *ngIf="abierta === op.id_operacion">
+        <p class="mensaje-op" *ngIf="op.mensaje">{{ op.mensaje }}</p>
+
+        <!-- Detalle del conflicto por prenda -->
+        <table class="tabla" *ngIf="op.detalle_conflicto?.length">
+          <thead>
+            <tr>
+              <th>Conflicto</th>
+              <th>Prenda</th>
+              <th>Cant.</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let c of op.detalle_conflicto">
+              <td>{{ c.tipo === 'PRECIO' ? 'Precio distinto' : 'Sin stock' }}</td>
+              <td>{{ c.prenda }}</td>
+              <td>{{ c.cantidad }}</td>
+              <td *ngIf="c.tipo === 'PRECIO'">
+                Cobrado Bs {{ c.precio_offline }} · actual Bs {{ c.precio_servidor }} · diferencia Bs {{ c.diferencia }}
+              </td>
+              <td *ngIf="c.tipo === 'STOCK'">Quedaban {{ c.stock_disponible }} en la sucursal</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Prendas de la venta registrada -->
+        <ng-container *ngIf="op.venta">
+          <h4>Venta #{{ op.venta.id_venta }} · {{ op.venta.estado_display }} · {{ totalPrendas(op) }} prenda(s)</h4>
+          <table class="tabla">
+            <thead>
+              <tr>
+                <th>Prenda</th>
+                <th>Cant.</th>
+                <th>Cobrado</th>
+                <th>Precio actual</th>
+                <th>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let i of op.venta.items">
+                <td>
+                  {{ i.variante }}
+                  <span class="tag-sin-stock" *ngIf="i.sin_stock">sin stock</span>
+                </td>
+                <td>{{ i.cantidad }}</td>
+                <td>Bs {{ i.precio_unitario }}</td>
+                <td>{{ i.precio_lista ? 'Bs ' + i.precio_lista : '-' }}</td>
+                <td>Bs {{ i.subtotal }}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="total-venta">Total cobrado: Bs {{ op.venta.total }} ({{ op.venta.metodo_pago }})</p>
+        </ng-container>
+
+        <!-- Resolución ya hecha -->
+        <div class="resolucion" *ngIf="op.resolucion">
+          <strong>{{ op.resolucion_display }}</strong>
+          por {{ op.revisada_por || '-' }} el {{ op.fecha_revision | date:'dd/MM/yyyy HH:mm' }}
+          <span *ngIf="op.nota_revision"> · Nota: {{ op.nota_revision }}</span>
+        </div>
+        <div class="nota-devolucion" *ngIf="op.nota_devolucion as nota">
+          <h4>Nota de devolución #{{ nota.id_nota }}</h4>
+          <p>Monto devuelto: <strong>Bs {{ nota.monto_devuelto }}</strong></p>
+          <p>Motivo: {{ nota.motivo }}</p>
+          <p>Emitida por {{ nota.usuario || '-' }} el {{ nota.fecha_creacion | date:'dd/MM/yyyy HH:mm' }}</p>
+          <ul>
+            <li *ngFor="let d of nota.detalle">
+              {{ d.cantidad }} x {{ d.prenda }} (Bs {{ d.subtotal }}) ·
+              {{ d.vuelve_al_stock ? 'volvió al stock' : 'no había descontado stock' }}
+            </li>
+          </ul>
+        </div>
+
+        <!-- Resolver el conflicto -->
+        <div class="resolver" *ngIf="op.puede_resolver">
+          <label [attr.for]="'nota-' + op.id_operacion">Nota (opcional)</label>
+          <textarea [id]="'nota-' + op.id_operacion" rows="2" [(ngModel)]="notas[op.id_operacion]"
+                    placeholder="Ej.: la prenda estaba en tienda / se devolvió el efectivo al cliente"></textarea>
+          <div class="botones" *ngIf="confirmando?.id !== op.id_operacion">
+            <button type="button" class="btn btn-accent" (click)="pedirConfirmacion(op, 'CONFIRMAR')">
+              {{ textoConfirmar(op) }}
+            </button>
+            <button type="button" class="btn btn-danger" (click)="pedirConfirmacion(op, 'DEVOLVER')">
+              Devolver efectivo
+            </button>
+          </div>
+          <div class="confirmacion" *ngIf="confirmando?.id === op.id_operacion">
+            <p *ngIf="confirmando?.accion === 'CONFIRMAR'">
+              <ng-container *ngIf="tieneConflictoDeStock(op)">
+                La venta queda válida y el stock de las prendas sin stock se ajusta restando lo vendido.
+              </ng-container>
+              <ng-container *ngIf="!tieneConflictoDeStock(op)">
+                La venta queda válida con el precio cobrado sin conexión.
+              </ng-container>
+            </p>
+            <p *ngIf="confirmando?.accion === 'DEVOLVER'">
+              Se anula la venta #{{ op.id_venta }}, se devuelven Bs {{ op.venta?.total }} al cliente,
+              las prendas vuelven al stock y se genera la nota de devolución.
+            </p>
+            <div class="botones">
+              <button type="button" class="btn btn-accent" [disabled]="resolviendo" (click)="resolver(op)">
+                {{ resolviendo ? 'Guardando...' : 'Sí, continuar' }}
+              </button>
+              <button type="button" class="btn btn-secondary" [disabled]="resolviendo" (click)="cancelarConfirmacion()">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="paginacion" *ngIf="hayAnterior || haySiguiente">
+      <button type="button" class="btn btn-secondary" [disabled]="!hayAnterior" (click)="buscar(pagina - 1)">Anterior</button>
+      <span>Página {{ pagina }}</span>
+      <button type="button" class="btn btn-secondary" [disabled]="!haySiguiente" (click)="buscar(pagina + 1)">Siguiente</button>
+    </div>
+  </div>
+</div>

@@ -10,7 +10,30 @@
   <div *ngIf="!loading && products.length === 0 && !enLinea" class="aviso-offline">
     No hay productos guardados en este dispositivo: abre el catálogo con conexión una vez para poder reservar sin internet.
   </div>
-  <div *ngIf="!loading" class="card">
+  <!-- NUEVO (Fase 2): pago de la reserva recién creada -->
+  <app-pago-reserva
+    *ngIf="reservaPorPagar"
+    [reserva]="reservaPorPagar"
+    (pagada)="onPagada($event)"
+    (cerrar)="onPagarDespues()"
+  ></app-pago-reserva>
+  <div class="pagada" *ngIf="reservaPagada">
+    <h3>¡Reserva #{{ reservaPagada.id_reserva }} confirmada!</h3>
+    <p>
+      Pagaste Bs {{ reservaPagada.monto_pagado | number:'1.2-2' }}
+      ({{ reservaPagada.tipo_pago_display | lowercase }}) y tus prendas quedaron apartadas en {{ reservaPagada.sucursal }}.
+    </p>
+    <p *ngIf="tieneSaldo(reservaPagada)">
+      Saldo a pagar al retirar: <strong>Bs {{ reservaPagada.saldo | number:'1.2-2' }}</strong>.
+    </p>
+    <p>
+      Te esperamos el {{ reservaPagada.fecha_reserva | date:'dd/MM/yyyy' }} a las {{ reservaPagada.hora_reserva | slice:0:5 }}.
+      Puedes retirarla hasta el {{ reservaPagada.fecha_vencimiento | date:'dd/MM/yyyy HH:mm' }}; después vence y se
+      devuelve lo pagado menos el {{ reservaPagada.porcentaje_retencion }}% del total.
+    </p>
+    <a routerLink="/reservations" class="btn btn-secondary">Ver mis reservas</a>
+  </div>
+  <div *ngIf="!loading && !reservaPorPagar" class="card">
     <h3>Agregar Prenda</h3>
     <div class="form-row">
       <div class="form-group">
@@ -59,12 +82,12 @@
       </div>
     </div>
     <div class="alert alert-error" *ngIf="errorMessage">{{ errorMessage }}</div>
-    <div class="alert alert-success" *ngIf="successMessage" [class.alert-offline]="guardadaSinConexion">
+    <div class="alert alert-success" *ngIf="successMessage" [class.alert-offline]="guardadaSinConexion || avisoPendientePago">
       {{ successMessage }}
-      <a *ngIf="guardadaSinConexion" routerLink="/reservations">Ver mis reservas</a>
+      <a *ngIf="guardadaSinConexion || avisoPendientePago" routerLink="/reservations">Ver mis reservas</a>
     </div>
     <button type="button" class="btn btn-accent btn-block" [disabled]="submitting" (click)="submit()">
-      {{ submitting ? 'Enviando...' : (enLinea ? 'Confirmar Reserva' : 'Guardar reserva sin conexión') }}
+      {{ submitting ? 'Enviando...' : (enLinea ? 'Reservar y pagar' : 'Guardar reserva sin conexión') }}
     </button>
   </div>
 </div>

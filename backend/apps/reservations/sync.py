@@ -1,3 +1,4 @@
+# backend/apps/reservations/sync.py
 """Sincronización de reservas hechas sin conexión (SaaS - A.5).
 
 Flujo (mismo contrato que las ventas POS de apps/sales/sync.py):
@@ -5,8 +6,10 @@ Flujo (mismo contrato que las ventas POS de apps/sales/sync.py):
    su almacenamiento local con un UUID propio y el estado REGISTRADA.
 2. Al reconectarse envía la cola a POST /api/reservations/reservas/sync/.
 3. El servidor procesa cada operación por separado y responde:
-   - SINCRONIZADA: la reserva se creó, se descontó el stock de sus prendas
-     y quedó CONFIRMADA (igual que una reserva hecha en línea).
+   - SINCRONIZADA: la reserva se creó.
+     MODIFICADO (Fase 2 - reservas con anticipo): queda "Pendiente de pago"
+     con 3 horas para pagarse por Stripe (anticipo o total); recién al pagar
+     se aparta la prenda. Si no paga a tiempo, vence y libera la prenda.
    - DUPLICADA:    ese UUID ya se había sincronizado; NO se crea otra
      reserva (idempotencia) y se devuelve la reserva original.
    - RECHAZADA:    no se pudo crear (sin stock en la sucursal, la fecha ya
@@ -25,15 +28,14 @@ from apps.catalog.models import Sucursal
 from apps.sales.models import SyncOperacion
 from common.utils import log_audit
 
+from .pagos import preparar_montos, verificar_disponibilidad
 from .serializers import FittingReservationSerializer
-from .services import ReservationStockError, ReservationStockService
+from .services import ReservationStockError
 
 MAX_RESERVAS_POR_LOTE = 100
 
-
 class DatosInvalidos(Exception):
     """Los datos de la reserva enviada no son válidos."""
-
 
 def _resultado(uuid, estado, mensaje=None, operacion=None):
     """Respuesta de una operación del lote."""
@@ -44,7 +46,6 @@ def _resultado(uuid, estado, mensaje=None, operacion=None):
         "mensaje": mensaje,
         "id_reserva": reserva.id_reserva if reserva else None,
     }
-
 
 def _resultado_existente(operacion):
     """Respuesta para un UUID que ya se había recibido (no se procesa otra vez)."""
@@ -58,14 +59,12 @@ def _resultado_existente(operacion):
         )
     return _resultado(operacion.uuid, operacion.estado, operacion.mensaje, operacion)
 
-
 def _leer_uuid(valor):
     """UUID enviado por el dispositivo, o None si no es válido."""
     try:
         return uuid_lib.UUID(str(valor))
     except (TypeError, ValueError, AttributeError):
         return None
-
 
 def _leer_fecha_operacion(valor):
     """Momento en que se hizo la reserva sin conexión (nunca en el futuro)."""
@@ -77,7 +76,6 @@ def _leer_fecha_operacion(valor):
     if timezone.is_naive(fecha):
         fecha = timezone.make_aware(fecha)
     return min(fecha, timezone.now())
-
 
 def _validar_horario(fecha_texto, hora_texto):
     """La fecha y la hora de la reserva no pueden haber pasado al sincronizar."""
@@ -94,7 +92,6 @@ def _validar_horario(fecha_texto, hora_texto):
             "La fecha y hora elegidas ya pasaron cuando la reserva llegó al servidor."
         )
 
-
 def _primer_error(errores):
     """Primer mensaje de error de un serializer (los errores pueden venir anidados)."""
     if isinstance(errores, dict):
@@ -107,7 +104,6 @@ def _primer_error(errores):
                 return mensaje
         return None
     return str(errores) if errores else None
-
 
 class SyncReservaService:
     """Procesa las reservas sin conexión que llegan desde los dispositivos."""
@@ -185,12 +181,15 @@ class SyncReservaService:
             if not serializer.is_valid():
                 raise DatosInvalidos(_primer_error(serializer.errors) or "Reserva inválida.")
             # Si alguna prenda no tiene stock se deshace la reserva completa.
+            # MODIFICADO (Fase 2): no se descuenta stock; queda pendiente de
+            # pago con 3 horas de plazo (el stock se aparta al pagar).
             with transaction.atomic():
                 reserva = serializer.save(id_cliente=cliente)
-                ReservationStockService.reservar_items(reserva)
-                reserva.estado = "CONFIRMADA"
-                reserva.save()
-                ReservationStockService.confirmar_reserva(reserva)
+                try:
+                    verificar_disponibilidad(reserva)
+                except ValueError as exc:
+                    raise ReservationStockError(str(exc))
+                preparar_montos(reserva)
         except (DatosInvalidos, ReservationStockError) as exc:
             operacion.estado = "RECHAZADA"
             operacion.mensaje = str(exc)[:255]
@@ -206,8 +205,11 @@ class SyncReservaService:
             registro_id=reserva.id_reserva,
             descripcion=(
                 f"{usuario.nombres} {usuario.apellidos} reservó {reserva.items.count()} "
-                f"prenda(s) en {sucursal.nombre} sin conexión (sincronizada) - "
-                f"Reserva #{reserva.id_reserva}"
+                f"prenda(s) en {sucursal.nombre} sin conexión (sincronizada, pendiente "
+                f"de pago) - Reserva #{reserva.id_reserva}"
             ),
         )
-        return _resultado(uuid, "SINCRONIZADA", "Reserva registrada.", operacion)
+        return _resultado(
+            uuid, "SINCRONIZADA",
+            "Reserva registrada: tienes 3 horas para pagarla o vencerá.", operacion,
+        )

@@ -1,0 +1,510 @@
+// NUEVO (Fase 2 - CU12): devolución de prendas con reembolso y nota de devolución
+.devol-container {
+  padding: 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  h2 {
+    color: #1a1a2e;
+    margin: 0 0 0.25rem;
+  }
+  .subtitulo {
+    margin: 0;
+    color: #777;
+    font-size: 0.9rem;
+  }
+}
+.btn-volver {
+  color: #0f3460;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.pestanas {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 2px solid #e0e0e0;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  button {
+    padding: 0.6rem 1rem;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-weight: 600;
+    color: #777;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    &.activa {
+      color: #0f3460;
+      border-bottom-color: #0f3460;
+    }
+  }
+}
+.aviso {
+  padding: 0.6rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  &.aviso--ok {
+    background: #e8f5e9;
+    color: #1b5e20;
+  }
+  &.aviso--error {
+    background: #fdecea;
+    color: #8e2a20;
+  }
+}
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  select {
+    padding: 0.4rem;
+    border: 1px solid #d0d7e2;
+    border-radius: 6px;
+  }
+}
+.chip {
+  padding: 0.4rem 0.9rem;
+  border: 1px solid #d0d7e2;
+  background: white;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  &.activa {
+    background: #0f3460;
+    border-color: #0f3460;
+    color: white;
+  }
+}
+.vacio {
+  padding: 1.5rem;
+  text-align: center;
+  color: #888;
+}
+.muted {
+  color: #888;
+  font-size: 0.85rem;
+  margin-left: 0.4rem;
+}
+.devol {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.75rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border-left: 4px solid #d0d7e2;
+  &.devol--atrasada {
+    border-left-color: #c0392b;
+  }
+}
+.devol-cabecera {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.devol-cuerpo {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: #333;
+  p {
+    margin: 0.25rem 0;
+  }
+  .muted {
+    margin-left: 0;
+  }
+  .rechazo {
+    color: #c0392b;
+  }
+}
+.tag-atrasado {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: #fdecea;
+  color: #c0392b;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.estado {
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: #eee;
+  color: #555;
+  &.estado--solicitada {
+    background: #fff8e1;
+    color: #8a6d00;
+  }
+  &.estado--programada {
+    background: #e3f2fd;
+    color: #0d47a1;
+  }
+  &.estado--en_camino {
+    background: #ede7f6;
+    color: #4527a0;
+  }
+  &.estado--completada {
+    background: #e8f5e9;
+    color: #1b5e20;
+  }
+  &.estado--rechazada {
+    background: #fdecea;
+    color: #c0392b;
+  }
+}
+.devol-acciones,
+.botones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.devol-acciones:empty {
+  display: none;
+}
+.btn-main,
+.btn-sec,
+.btn-peligro {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.btn-main {
+  background: #0f3460;
+  color: white;
+  border: 1px solid #0f3460;
+}
+.btn-sec {
+  background: white;
+  color: #0f3460;
+  border: 1px solid #0f3460;
+}
+.btn-peligro {
+  background: white;
+  color: #c0392b;
+  border: 1px solid #c0392b;
+}
+.btn-link {
+  background: none;
+  border: none;
+  color: #0f3460;
+  text-decoration: underline;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.panel-accion {
+  margin-top: 0.75rem;
+  padding: 0.9rem;
+  border-radius: 8px;
+  background: #f6f8fb;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  .botones {
+    width: 100%;
+    margin-top: 0;
+  }
+}
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 220px;
+  flex: 1;
+  label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #1a1a2e;
+  }
+  select,
+  input {
+    padding: 0.5rem;
+    border: 1px solid #d0d7e2;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+  &.campo--ancho {
+    width: 100%;
+    flex-basis: 100%;
+  }
+}
+.nota-stock {
+  width: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+  color: #555;
+}
+.buscador {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  select,
+  input {
+    padding: 0.5rem;
+    border: 1px solid #d0d7e2;
+    border-radius: 6px;
+  }
+  label {
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+}
+.compra,
+.formulario {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  h3 {
+    margin: 0 0 0.25rem;
+    color: #1a1a2e;
+    font-size: 1rem;
+  }
+  .muted {
+    margin-left: 0;
+  }
+}
+.formulario {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  h3 {
+    width: 100%;
+  }
+  .botones {
+    width: 100%;
+  }
+}
+.motivos {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.opcion,
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.check {
+  width: 100%;
+  font-weight: 600;
+}
+.ayuda {
+  color: #777;
+  font-size: 0.8rem;
+}
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+  background: white;
+  th,
+  td {
+    text-align: left;
+    padding: 0.5rem;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  th {
+    color: #777;
+    font-weight: 600;
+  }
+  tr.seleccionada {
+    background: #f0f4fa;
+  }
+}
+.no-elegible {
+  color: #999;
+  font-size: 0.8rem;
+}
+.tarjetas {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.tarjeta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.9rem 1rem;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e0e0e0;
+  font-size: 0.85rem;
+  color: #555;
+  .numero {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+  &.tarjeta--ok .numero {
+    color: #1b5e20;
+  }
+  &.tarjeta--proceso .numero {
+    color: #0d47a1;
+  }
+  &.tarjeta--rechazo .numero {
+    color: #c0392b;
+  }
+}
+.modal-fondo {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: white;
+  border-radius: 10px;
+  padding: 1.5rem;
+  width: 92%;
+  max-width: 640px;
+  max-height: 88vh;
+  overflow-y: auto;
+  h3 {
+    margin: 0 0 0.5rem;
+    color: #1a1a2e;
+  }
+  .estado-nota {
+    margin: 0 0 0.5rem;
+  }
+}
+.tabla--nota th {
+  width: 35%;
+}
+.prendas {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+  li {
+    margin: 0.15rem 0;
+  }
+  .muted {
+    margin-left: 0.2rem;
+  }
+  .monto {
+    margin-left: 0.4rem;
+    color: #1b5e20;
+    font-weight: 600;
+  }
+}
+.reembolso {
+  margin: 0.4rem 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  background: #f6f8fb;
+  color: #1a1a2e;
+  font-size: 0.85rem;
+}
+.input-cantidad {
+  width: 70px;
+  padding: 0.35rem;
+  border: 1px solid #d0d7e2;
+  border-radius: 6px;
+}
+.tabla select {
+  padding: 0.35rem;
+  border: 1px solid #d0d7e2;
+  border-radius: 6px;
+}
+.resumen-montos {
+  width: 100%;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0.5rem 0;
+  .fila {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.25rem 0;
+    font-size: 0.9rem;
+  }
+  .fila--retencion {
+    color: #c0392b;
+  }
+  .fila--total {
+    border-top: 1px solid #e0e0e0;
+    margin-top: 0.25rem;
+    padding-top: 0.5rem;
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #1b5e20;
+  }
+  .metodo {
+    margin: 0.4rem 0 0;
+    font-size: 0.8rem;
+    color: #555;
+  }
+}
+.tarjeta--dinero .numero {
+  font-size: 1.2rem;
+  color: #1b5e20;
+}
+.modal h4 {
+  margin: 1rem 0 0.25rem;
+  color: #1a1a2e;
+}
+@media print {
+  .devol-container {
+    display: none;
+  }
+  .modal-fondo {
+    position: static;
+    background: none;
+  }
+  .modal {
+    box-shadow: none;
+    max-height: none;
+    width: 100%;
+    max-width: none;
+  }
+  .botones {
+    display: none;
+  }
+}
+@media (max-width: 800px) {
+  .tarjetas {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .devol-container {
+    padding: 1rem;
+  }
+  .tarjetas {
+    grid-template-columns: 1fr;
+  }
+  .tabla {
+    display: block;
+    overflow-x: auto;
+  }
+}
