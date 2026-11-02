@@ -83,8 +83,12 @@
 .auth-header {
   margin-bottom: 2.25rem;
 
+  // MODIFICADO: el logotipo nuevo es horizontal (ojo + texto); se ajusta al ancho
+  // de la tarjeta en vez de tener una altura fija.
   &__logo {
-    height: 150px;
+    width: 100%;
+    max-width: 320px;
+    height: auto;
     display: block;
     margin-bottom: 1rem;
   }
