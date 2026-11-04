@@ -17,6 +17,13 @@
 //   reservas_local            reservas hechas sin conexión
 //   reserva_items_local       prendas de cada reserva (FK CASCADE)
 //   cache_json                copias de listas del servidor (ej. mis reservas)
+// Versión 3 (Fase 2 - CU08, igual que la web):
+//   ventas_local + correo_cliente  cliente opcional de la venta
+//                + en_conflicto    1 si el servidor la registró en conflicto
+//                + tipo_conflicto  PRECIO / STOCK / PRECIO_Y_STOCK
+//                + conflictos      detalle por prenda (JSON)
+//   sync_resultados + en_conflicto  cantidad en conflicto por sincronización
+//   Solo se agregan columnas (sin recrear tablas): no se pierde nada.
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
@@ -26,7 +33,7 @@ class OfflineDb {
   static final OfflineDb instancia = OfflineDb._();
 
   static const String _nombre = 'smartlook_offline.db';
-  static const int _version = 2;
+  static const int _version = 3;
 
   Future<Database>? _apertura;
 
@@ -45,10 +52,12 @@ class OfflineDb {
       onCreate: (db, version) async {
         await _crearVersion1(db);
         await _crearVersion2(db);
+        await _crearVersion3(db);
       },
       onUpgrade: (db, anterior, nueva) async {
-        // Migración sin perder datos: solo se agregan las tablas nuevas.
+        // Migración sin perder datos: solo se agregan tablas y columnas nuevas.
         if (anterior < 2) await _crearVersion2(db);
+        if (anterior < 3) await _crearVersion3(db);
       },
     );
   }
@@ -206,6 +215,17 @@ class OfflineDb {
     batch.execute('CREATE INDEX idx_variantes_producto ON variantes_producto_local (id_producto)');
     batch.execute('CREATE INDEX idx_reservas_usuario_estado ON reservas_local (id_usuario, estado)');
     batch.execute('CREATE INDEX idx_items_reserva ON reserva_items_local (uuid_reserva)');
+    await batch.commit(noResult: true);
+  }
+
+  /// Fase 2 - CU08: cliente opcional y conflictos de las ventas sin conexión.
+  Future<void> _crearVersion3(Database db) async {
+    final batch = db.batch();
+    batch.execute('ALTER TABLE ventas_local ADD COLUMN correo_cliente TEXT');
+    batch.execute('ALTER TABLE ventas_local ADD COLUMN en_conflicto INTEGER NOT NULL DEFAULT 0');
+    batch.execute('ALTER TABLE ventas_local ADD COLUMN tipo_conflicto TEXT');
+    batch.execute('ALTER TABLE ventas_local ADD COLUMN conflictos TEXT');
+    batch.execute('ALTER TABLE sync_resultados ADD COLUMN en_conflicto INTEGER NOT NULL DEFAULT 0');
     await batch.commit(noResult: true);
   }
 }

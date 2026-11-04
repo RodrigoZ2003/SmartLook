@@ -3,6 +3,8 @@
 // MODIFICADO (SaaS - A.2): la pantalla inicial sale de User.rutaInicio
 // (misma regla que la web): SUPER_ADMIN, ADMIN_EMPRESA, ENCARGADO_SUCURSAL
 // y CAJERO van al panel; solo REPARTIDOR va a Entregas; el resto al catálogo.
+// MODIFICADO: logotipo nuevo (el mismo PNG de la web, horizontal: ojo +
+// texto); se ajusta al ancho de la tarjeta en vez de tener altura fija.
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -123,11 +125,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Image.asset(
-                        'assets/images/logotipo-smartlook.jpeg',
-                        height: 40,
+                      // MODIFICADO: logotipo horizontal, ocupa el ancho de la tarjeta (máx. 320).
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 320),
+                        child: Image.asset(
+                          'assets/images/logotipo-smartlook.png',
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                        ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 16),
                       Text(
                         'Inicia sesión para continuar',
                         style: GoogleFonts.inter(fontSize: 14, color: AppColors.grey),

@@ -5,16 +5,26 @@
 // MODIFICADO (SaaS): tarjeta "Empresas" (SUPER_ADMIN: lista de empresas con
 // sus sucursales; ADMIN_EMPRESA: detalle de la suya) y se enlaza
 // "Usuarios y Roles", que mostraba "próximamente".
+// MODIFICADO (Fase 2 - CU05 / CU12): tarjetas "Cambios de prenda" y
+// "Devoluciones" (seguimiento, registrar en tienda y consulta del mes) para
+// SUPER_ADMIN, ADMIN_EMPRESA, ENCARGADO_SUCURSAL y CAJERO.
+// MODIFICADO (Fase 2 - CU16): campana de notificaciones con contador, solo
+// para SUPER_ADMIN y ADMIN_EMPRESA (el resto del personal no recibe avisos).
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import '../../../core/network/api_client.dart';
+import '../../../core/notificaciones/notificaciones_service.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../../shared/widgets/empresa_banner.dart';
 import '../../pos/presentation/pos_cart_screen.dart';
 import '../../deliveries/presentation/deliveries_screen.dart';
 import '../../catalog/presentation/product_list_screen.dart';
+import '../../cambios/presentation/cambios_tienda_screen.dart';
+import '../../devoluciones/presentation/devoluciones_tienda_screen.dart';
+import '../../notificaciones/presentation/notificaciones_screen.dart';
 import 'user_management_screen.dart';
 import 'permission_management_screen.dart';
 import 'bitacora_list_screen.dart';
@@ -26,12 +36,64 @@ import 'dashboard_home_screen.dart';
 import 'attribute_management_screen.dart';
 import 'product_management_screen.dart';
 import 'reservation_management_screen.dart';
-import 'devolucion_list_screen.dart';
 import 'empresa_list_screen.dart';
 import 'empresa_detail_screen.dart';
 
-class AdminHomeScreen extends StatelessWidget {
+class AdminHomeScreen extends StatefulWidget {
   const AdminHomeScreen({super.key});
+
+  @override
+  State<AdminHomeScreen> createState() => _AdminHomeScreenState();
+}
+
+class _AdminHomeScreenState extends State<AdminHomeScreen> {
+  NotificacionesService? _notificaciones;
+
+  @override
+  void initState() {
+    super.initState();
+    final usuario = context.read<AuthService>().currentUser;
+    final recibeAvisos =
+        (usuario?.hasRole('SUPER_ADMIN') ?? false) || (usuario?.hasRole('ADMIN_EMPRESA') ?? false);
+    if (recibeAvisos) {
+      _notificaciones = NotificacionesService(apiClient: context.read<ApiClient>())..iniciar();
+    }
+  }
+
+  @override
+  void dispose() {
+    _notificaciones?.dispose();
+    super.dispose();
+  }
+
+  void _abrir(Widget pantalla) {
+    Navigator.push(context, MaterialPageRoute(builder: (context) => pantalla));
+  }
+
+  /// El enlace del aviso es una ruta de la web: se abre la pantalla equivalente.
+  void _abrirEnlace(String enlace) {
+    if (enlace.startsWith('/reservations')) {
+      _abrir(const ReservationManagementScreen());
+    } else if (enlace.startsWith('/deliveries')) {
+      _abrir(const DeliveriesScreen());
+    } else if (enlace.startsWith('/pos')) {
+      _abrir(const PosCartScreen());
+    } else if (enlace.startsWith('/orders') || enlace.startsWith('/devoluciones')) {
+      _abrir(const DevolucionesTiendaScreen());
+    }
+  }
+
+  Future<void> _abrirNotificaciones() async {
+    final service = _notificaciones;
+    if (service == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NotificacionesScreen(service: service, onAbrir: _abrirEnlace),
+      ),
+    );
+    service.actualizarContador();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -39,6 +101,9 @@ class AdminHomeScreen extends StatelessWidget {
     final usuario = authService.currentUser;
     final esSuperAdmin = usuario?.hasRole('SUPER_ADMIN') ?? false;
     final esAdminEmpresa = usuario?.hasRole('ADMIN_EMPRESA') ?? false;
+    final esEncargado = usuario?.hasRole('ENCARGADO_SUCURSAL') ?? false;
+    final esCajero = usuario?.hasRole('CAJERO') ?? false;
+    final personalTienda = esSuperAdmin || esAdminEmpresa || esEncargado || esCajero;
 
     final secciones = <_SeccionAdmin>[
       _SeccionAdmin('Dashboard', Icons.dashboard_outlined, 'dashboard'),
@@ -46,6 +111,9 @@ class AdminHomeScreen extends StatelessWidget {
         _SeccionAdmin(esSuperAdmin ? 'Empresas' : 'Mi empresa', Icons.business_outlined, 'empresas'),
       _SeccionAdmin('Catálogo', Icons.shopping_bag_outlined, 'catalogo'),
       _SeccionAdmin('Punto de Venta', Icons.point_of_sale_outlined, 'pos'),
+      // NUEVO (Fase 2 - CU05 / CU12): mismos roles que en el backend.
+      if (personalTienda) _SeccionAdmin('Cambios de prenda', Icons.swap_horiz, 'cambios'),
+      if (personalTienda) _SeccionAdmin('Devoluciones', Icons.assignment_return_outlined, 'devoluciones'),
       _SeccionAdmin('Usuarios y Roles', Icons.people_outline, 'usuarios'),
       _SeccionAdmin('Productos', Icons.checkroom_outlined, 'productos'),
       _SeccionAdmin('Atributos de Producto', Icons.straighten_outlined, 'atributos'),
@@ -56,20 +124,13 @@ class AdminHomeScreen extends StatelessWidget {
       _SeccionAdmin('Proveedores', Icons.local_shipping_outlined, 'proveedores'),
       _SeccionAdmin('Clientes', Icons.person_outline, 'clientes'),
       _SeccionAdmin('Bitácora', Icons.receipt_long_outlined, 'bitacora'),
-      if (usuario != null && (usuario.hasRole('SUPER_ADMIN') || usuario.hasRole('ADMIN_EMPRESA') || usuario.hasRole('ENCARGADO_SUCURSAL')))
+      if (esSuperAdmin || esAdminEmpresa || esEncargado)
         _SeccionAdmin('Entregas', Icons.delivery_dining, 'entregas'),
-      // Devoluciones: misma restricción de rol que "Entregas".
-      if (usuario != null && (usuario.hasRole('SUPER_ADMIN') || usuario.hasRole('ADMIN_EMPRESA') || usuario.hasRole('ENCARGADO_SUCURSAL')))
-        _SeccionAdmin('Devoluciones', Icons.assignment_return_outlined, 'devoluciones'),
     ];
 
     final nombreRol = usuario != null && usuario.roles.isNotEmpty
         ? usuario.roles.first.nombre
         : '';
-
-    void abrir(Widget pantalla) {
-      Navigator.push(context, MaterialPageRoute(builder: (context) => pantalla));
-    }
 
     return Scaffold(
       backgroundColor: AppColors.panelBg,
@@ -86,10 +147,18 @@ class AdminHomeScreen extends StatelessWidget {
         ),
         iconTheme: const IconThemeData(color: AppColors.panelBg),
         actions: [
+          if (_notificaciones != null)
+            IconButton(
+              tooltip: 'Notificaciones',
+              icon: CampanaNotificaciones(service: _notificaciones!, color: AppColors.panelBg),
+              onPressed: _abrirNotificaciones,
+            ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Cerrar sesión',
             onPressed: () async {
+              _notificaciones?.dispose();
+              _notificaciones = null;
               await authService.logout();
               if (context.mounted) {
                 Navigator.pushReplacementNamed(context, '/login');
@@ -145,56 +214,59 @@ class AdminHomeScreen extends StatelessWidget {
                   onTap: () {
                     switch (seccion.clave) {
                       case 'dashboard':
-                        abrir(const DashboardHomeScreen());
+                        _abrir(const DashboardHomeScreen());
                         break;
                       case 'empresas':
                         if (esSuperAdmin) {
-                          abrir(const EmpresaListScreen());
+                          _abrir(const EmpresaListScreen());
                         } else if (usuario?.idEmpresa != null) {
-                          abrir(EmpresaDetailScreen(idEmpresa: usuario!.idEmpresa!));
+                          _abrir(EmpresaDetailScreen(idEmpresa: usuario!.idEmpresa!));
                         }
                         break;
                       case 'catalogo':
-                        abrir(const ProductListScreen());
+                        _abrir(const ProductListScreen());
                         break;
                       case 'pos':
-                        abrir(const PosCartScreen());
+                        _abrir(const PosCartScreen());
                         break;
-                      case 'usuarios':
-                        abrir(const UserManagementScreen());
-                        break;
-                      case 'productos':
-                        abrir(const ProductManagementScreen());
-                        break;
-                      case 'atributos':
-                        abrir(const AttributeManagementScreen());
-                        break;
-                      case 'permisos':
-                        abrir(const PermissionManagementScreen());
-                        break;
-                      case 'bitacora':
-                        abrir(const BitacoraListScreen());
-                        break;
-                      case 'clientes':
-                        abrir(const ClientListScreen());
-                        break;
-                      case 'inventario':
-                        abrir(const InventoryScreen());
-                        break;
-                      case 'reservas':
-                        abrir(const ReservationManagementScreen());
-                        break;
-                      case 'sucursales':
-                        abrir(const BranchManagementScreen());
-                        break;
-                      case 'entregas':
-                        abrir(const DeliveriesScreen());
+                      case 'cambios':
+                        _abrir(const CambiosTiendaScreen());
                         break;
                       case 'devoluciones':
-                        abrir(const DevolucionListScreen());
+                        _abrir(const DevolucionesTiendaScreen());
+                        break;
+                      case 'usuarios':
+                        _abrir(const UserManagementScreen());
+                        break;
+                      case 'productos':
+                        _abrir(const ProductManagementScreen());
+                        break;
+                      case 'atributos':
+                        _abrir(const AttributeManagementScreen());
+                        break;
+                      case 'permisos':
+                        _abrir(const PermissionManagementScreen());
+                        break;
+                      case 'bitacora':
+                        _abrir(const BitacoraListScreen());
+                        break;
+                      case 'clientes':
+                        _abrir(const ClientListScreen());
+                        break;
+                      case 'inventario':
+                        _abrir(const InventoryScreen());
+                        break;
+                      case 'reservas':
+                        _abrir(const ReservationManagementScreen());
+                        break;
+                      case 'sucursales':
+                        _abrir(const BranchManagementScreen());
+                        break;
+                      case 'entregas':
+                        _abrir(const DeliveriesScreen());
                         break;
                       case 'proveedores':
-                        abrir(const SupplierManagementScreen());
+                        _abrir(const SupplierManagementScreen());
                         break;
                       default:
                         ScaffoldMessenger.of(context).showSnackBar(

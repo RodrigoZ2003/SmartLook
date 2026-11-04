@@ -3,6 +3,10 @@
 // MODIFICADO (SaaS - A.1): un carrito por tienda. Arriba, chips con cada
 // tienda y su cantidad de prendas; se paga un carrito a la vez y solo se
 // ofrecen las sucursales de la tienda elegida.
+// MODIFICADO (Fase 2 - reservas con anticipo, igual que la web): las prendas
+// de una reserva muestran su precio reservado, no cambian de cantidad ni se
+// quitan si la reserva está pagada (se cancela desde "Mis reservas"), y el
+// total ya viene con lo pagado al reservar descontado (se cobra solo el saldo).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart'
@@ -111,12 +115,25 @@ class _CartScreenState extends State<CartScreen> {
     return null;
   }
 
+  /// Fase 2: el total del carrito ya es el saldo (precio de las prendas menos lo pagado al reservar).
   double get _totalProductos => double.tryParse('${_carrito?['total']}') ?? 0;
+
+  double get _subtotalPrendas => double.tryParse('${_carrito?['subtotal_prendas']}') ?? 0;
+
+  double get _pagadoReservas => double.tryParse('${_carrito?['pagado_reservas']}') ?? 0;
+
+  /// NUEVO (Fase 2): el carrito tiene prendas de reservas ya pagadas (anticipo o total).
+  bool get _tienePagoReservas => _pagadoReservas > 0;
+
+  /// NUEVO (Fase 2): todo está pagado y se retira en tienda (no hay nada que cobrar).
+  bool get _sinSaldoParaRetiro =>
+      _tipoEntrega == 'RETIRO' && _tienePagoReservas && !(_totalProductos > 0);
 
   double get _costoEnvio => (_tipoEntrega == 'DELIVERY' && _cotizacion != null)
       ? (double.tryParse('${_cotizacion!['costo_envio']}') ?? 0)
       : 0;
 
+  // Total a cobrar: saldo de las prendas + envío (solo si es delivery y ya hay cotización).
   double get _totalAPagar => _totalProductos + _costoEnvio;
 
   bool get _pagoEnCurso => _mostrarFormularioPago || _iniciandoPago || _confirmandoPago;
@@ -125,6 +142,8 @@ class _CartScreenState extends State<CartScreen> {
     final items = (carrito['items'] ?? []) as List<dynamic>;
     return items.fold<int>(0, (suma, i) => suma + ((i['cantidad'] ?? 0) as int));
   }
+
+  String _bs(dynamic valor) => (double.tryParse('${valor ?? ''}') ?? 0).toStringAsFixed(2);
 
   // ---- Carga ----
 
@@ -210,7 +229,11 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Future<void> _quitar(Map<String, dynamic> item) async {
-    await _cartService.quitarItem(item['id_item'] as int);
+    try {
+      await _cartService.quitarItem(item['id_item'] as int);
+    } catch (e) {
+      if (mounted) setState(() => _errorPago = _extraerError(e, 'No se pudo quitar la prenda.'));
+    }
     _cargar();
   }
 
@@ -517,8 +540,22 @@ class _CartScreenState extends State<CartScreen> {
                           const SizedBox(height: 8),
                           Text(_errorPago!, style: const TextStyle(color: AppColors.danger)),
                         ],
+                        if (_sinSaldoParaRetiro) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F5E9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'Ya pagaste todo al reservar: retira tus prendas en la sucursal, no hace falta pagar aquí.',
+                              style: TextStyle(color: Color(0xFF1B5E20)),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
-                        if (!_mostrarFormularioPago)
+                        if (!_mostrarFormularioPago && !_sinSaldoParaRetiro)
                           ElevatedButton(
                             onPressed: _iniciandoPago ? null : _iniciarPago,
                             style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
@@ -612,6 +649,9 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Widget _tarjetaItem(Map<String, dynamic> item) {
+    // Fase 2: prenda de una reserva (precio congelado, se retira completa).
+    final reservado = item['reservado'] == true;
+    final puedeQuitar = item['puede_quitar'] != false;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -630,47 +670,74 @@ class _CartScreenState extends State<CartScreen> {
                     'Bs ${item['precio_unitario']} c/u',
                     style: const TextStyle(color: AppColors.grey, fontSize: 12),
                   ),
+                  if (reservado)
+                    Text(
+                      'Reserva #${item['id_reserva']}${!puedeQuitar ? ' · pagada al reservar' : ''}',
+                      style: const TextStyle(
+                        color: AppColors.accent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                 ],
               ),
             ),
-            IconButton(
-              icon: const Icon(Icons.remove_circle_outline),
-              onPressed: _pagoEnCurso ? null : () => _decrementar(item),
+            if (!reservado)
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: _pagoEnCurso ? null : () => _decrementar(item),
+              ),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: reservado ? 8 : 0),
+              child: Text('${item['cantidad']}'),
             ),
-            Text('${item['cantidad']}'),
-            IconButton(
-              icon: const Icon(Icons.add_circle_outline),
-              onPressed: _pagoEnCurso ? null : () => _incrementar(item),
-            ),
+            if (!reservado)
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: _pagoEnCurso ? null : () => _incrementar(item),
+              ),
             const SizedBox(width: 8),
             Text(
               'Bs ${item['subtotal']}',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
-            IconButton(
-              icon: const Icon(Icons.close, color: AppColors.danger),
-              onPressed: _pagoEnCurso ? null : () => _quitar(item),
-            ),
+            if (puedeQuitar)
+              IconButton(
+                icon: const Icon(Icons.close, color: AppColors.danger),
+                onPressed: _pagoEnCurso ? null : () => _quitar(item),
+              )
+            else
+              const Tooltip(
+                message: 'Para no llevarla, cancela la reserva desde Mis reservas',
+                child: Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: Text(
+                    'Se retira\ncompleta',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11, color: AppColors.grey),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _filaResumen(String etiqueta, String valor, {bool grande = false}) {
+  Widget _filaResumen(String etiqueta, String valor, {bool grande = false, Color? color}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(etiqueta,
-              style: TextStyle(fontSize: grande ? 18 : 15, fontWeight: FontWeight.w600)),
+              style: TextStyle(fontSize: grande ? 18 : 15, fontWeight: FontWeight.w600, color: color)),
           Text(
             valor,
             style: TextStyle(
               fontSize: grande ? 20 : 15,
               fontWeight: FontWeight.bold,
-              color: grande ? AppColors.accent : null,
+              color: grande ? AppColors.accent : color,
             ),
           ),
         ],
@@ -683,8 +750,13 @@ class _CartScreenState extends State<CartScreen> {
     return Column(
       children: [
         const Divider(),
+        // NUEVO (Fase 2): lo pagado al reservar se descuenta del total.
+        if (_tienePagoReservas) ...[
+          _filaResumen('Precio de las prendas', 'Bs ${_bs(_subtotalPrendas)}'),
+          _filaResumen('Pagado al reservar', '- Bs ${_bs(_pagadoReservas)}', color: AppColors.success),
+        ],
         _filaResumen(
-          esDelivery ? 'Subtotal' : 'Total',
+          esDelivery ? 'Subtotal' : (_tienePagoReservas ? 'Saldo a pagar' : 'Total'),
           'Bs ${_totalProductos.toStringAsFixed(2)}',
           grande: !esDelivery,
         ),

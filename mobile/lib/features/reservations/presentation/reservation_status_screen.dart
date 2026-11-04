@@ -1,11 +1,15 @@
 // mobile/lib/features/reservations/presentation/reservation_status_screen.dart
 //
-// Lista las reservas del cliente (el backend filtra por el usuario) y permite
-// cancelar las que estén PENDIENTE o CONFIRMADA.
+// Lista las reservas del cliente (el backend filtra por el usuario).
 // MODIFICADO (SaaS - 6.2): el cliente ve también sus reservas hechas sin
-// conexión con su estado (Registrada localmente, Enviada, Confirmada,
+// conexión con su estado (Registrada localmente, Enviada, Recibida,
 // Rechazada), puede sincronizarlas, descartar las rechazadas y quitar las
-// confirmadas. Sin conexión, la lista del servidor sale de la copia guardada.
+// recibidas. Sin conexión, la lista del servidor sale de la copia guardada.
+// MODIFICADO (Fase 2 - reservas con anticipo y CU17, igual que la web): cada
+// reserva muestra lo pagado, el saldo y sus plazos. El cliente paga las
+// pendientes de pago (PagoReservaWidget) y al cancelar ve cuánto se le
+// devuelve (lo pagado menos el 10% del total); las canceladas o vencidas
+// muestran su nota NR.
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -13,6 +17,7 @@ import '../../../core/network/api_client.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../data/reservation_service.dart';
 import '../data/reserva_offline_service.dart';
+import 'pago_reserva_widget.dart';
 import 'reservation_form_screen.dart';
 
 class ReservationStatusScreen extends StatefulWidget {
@@ -24,6 +29,7 @@ class ReservationStatusScreen extends StatefulWidget {
 
 class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
   static const Color _naranja = Color(0xFFE65100);
+  static const Color _textoNaranja = Color(0xFF8A4B00);
   static const Color _fondoNaranja = Color(0xFFFFF3E0);
 
   late final ReservationService _reservationService;
@@ -35,6 +41,12 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
   bool _sinDatosGuardados = false;
   DateTime? _fechaCopia;
   ResultadoSyncReservas? _ultimoResultado;
+
+  // NUEVO (Fase 2): reserva que se está pagando y la que se está cancelando.
+  int? _idPagando;
+  int? _idCancelando;
+  String _mensaje = '';
+  String _errorAccion = '';
 
   @override
   void initState() {
@@ -54,7 +66,7 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
     super.dispose();
   }
 
-  // Las reservas confirmadas en una sincronización ya aparecen en la lista del servidor.
+  // Las reservas recibidas en una sincronización ya aparecen en la lista del servidor.
   void _alCambiarOffline() {
     final r = _offline.resultado;
     if (r != null && r != _ultimoResultado && r.sincronizadas + r.duplicadas > 0) {
@@ -99,19 +111,101 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
     }
   }
 
-  Future<void> _cancelar(int id) async {
+  bool _tieneSaldo(Map reserva) => montoReserva(reserva['saldo']) > 0;
+
+  bool _tienePago(Map reserva) => montoReserva(reserva['monto_pagado']) > 0;
+
+  String _textoFecha(dynamic valor) {
+    final f = fechaReservaLocal(valor);
+    return f == null ? '' : _fmt.format(f);
+  }
+
+  // CU17: avisa cuánto se devuelve antes de cancelar.
+  String _textoConfirmarCancelacion(Map reserva) {
+    final c = reserva['cancelacion'];
+    if (c is! Map || montoReserva(c['pagado']) <= 0) {
+      return '¿Cancelar la Reserva #${reserva['id_reserva']}? Las prendas dejarán de estar reservadas.';
+    }
+    return '¿Cancelar la Reserva #${reserva['id_reserva']}?\n\n'
+        'Pagaste: Bs ${bsReserva(c['pagado'])}\n'
+        'Se retiene el ${reserva['porcentaje_retencion']}% del total: Bs ${bsReserva(c['retenido'])}\n'
+        'Se te devuelve a la tarjeta: Bs ${bsReserva(c['devuelto'])}';
+  }
+
+  Future<void> _cancelar(Map reserva) async {
+    setState(() {
+      _mensaje = '';
+      _errorAccion = '';
+    });
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        content: Text(_textoConfirmarCancelacion(reserva)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Volver')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cancelar reserva', style: TextStyle(color: AppColors.danger)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    final id = reserva['id_reserva'] as int;
+    setState(() => _idCancelando = id);
     try {
-      await _reservationService.cancelarReserva(id);
+      final cancelada = await _reservationService.cancelarReserva(id);
+      if (!mounted) return;
+      final nota = cancelada['numero_nota'];
+      setState(() {
+        _idCancelando = null;
+        _mensaje = (nota != null && '$nota'.isNotEmpty)
+            ? 'Reserva #${cancelada['id_reserva']} cancelada. Nota $nota: se devuelven '
+                'Bs ${bsReserva(cancelada['monto_devuelto'])} a tu tarjeta.'
+            : 'Reserva #$id cancelada.';
+      });
       _cargar();
     } catch (e) {
       if (!mounted) return;
-      final mensaje = _offline.esErrorDeRedApi(e)
-          ? 'Sin conexión: la reserva no se puede cancelar ahora. Inténtalo al recuperar internet.'
-          : 'No se pudo cancelar la reserva.';
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
+      String mensaje = 'No se pudo cancelar la reserva.';
+      if (_offline.esErrorDeRedApi(e)) {
+        mensaje = 'Sin conexión: la reserva no se puede cancelar ahora. Inténtalo al recuperar internet.';
+      } else {
+        try {
+          final data = (e as dynamic).response?.data;
+          if (data is Map && data['error'] != null) mensaje = data['error'].toString();
+        } catch (_) {}
+      }
+      setState(() {
+        _idCancelando = null;
+        _errorAccion = mensaje;
+      });
     }
   }
 
+  // ---------------------------------------------------------------- pago (Fase 2)
+  void _abrirPago(Map reserva) {
+    setState(() {
+      _mensaje = '';
+      _errorAccion = '';
+      _idPagando = reserva['id_reserva'] as int;
+    });
+  }
+
+  void _cerrarPago() {
+    setState(() => _idPagando = null);
+  }
+
+  void _onPagada(Map<String, dynamic> reserva) {
+    setState(() {
+      _idPagando = null;
+      _mensaje = 'Reserva #${reserva['id_reserva']} confirmada: pagaste Bs ${bsReserva(reserva['monto_pagado'])}'
+          '${_tieneSaldo(reserva) ? ' y pagarás Bs ${bsReserva(reserva['saldo'])} al retirar.' : '.'}';
+    });
+    _cargar();
+  }
+
+  // ---------------------------------------------------------------- reservas sin conexión
   Future<void> _descartar(ReservaLocal reserva) async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -133,6 +227,8 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
     switch (estado) {
       case 'PENDIENTE':
         return Colors.orange;
+      case 'PENDIENTE_PAGO':
+        return _naranja;
       case 'CONFIRMADA':
         return Colors.blue;
       case 'COMPLETADA':
@@ -144,12 +240,11 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
     }
   }
 
-  bool _puedeCancelar(String estado) => estado == 'PENDIENTE' || estado == 'CONFIRMADA';
-
   String _textoEstadoLocal(ReservaLocal r) {
     switch (r.estado) {
       case EstadoReservaLocal.confirmada:
-        return r.idReserva != null ? 'Confirmada · Reserva #${r.idReserva}' : 'Confirmada';
+        // Fase 2: el servidor la recibió "Pendiente de pago" (3 horas para pagarla).
+        return r.idReserva != null ? 'Recibida · Reserva #${r.idReserva}' : 'Recibida';
       case EstadoReservaLocal.rechazada:
         return 'Rechazada';
       case EstadoReservaLocal.enviada:
@@ -187,19 +282,19 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
+            if (_errorAccion.isNotEmpty)
+              _caja(_errorAccion, const Color(0xFFFDECEA), const Color(0xFFC0392B)),
+            if (_mensaje.isNotEmpty)
+              _caja(_mensaje, const Color(0xFFE8F5E9), const Color(0xFF1B5E20)),
             if (mostrarCola) ...[
               _seccionCola(offline),
               const SizedBox(height: 16),
             ],
             if (_fechaCopia != null)
-              Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: _fondoNaranja, borderRadius: BorderRadius.circular(6)),
-                child: Text(
-                  'Sin conexión: lista guardada el ${_fmt.format(_fechaCopia!.toLocal())}. Puede estar desactualizada.',
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF8A4B00)),
-                ),
+              _caja(
+                'Sin conexión: lista guardada el ${_fmt.format(_fechaCopia!.toLocal())}. Puede estar desactualizada.',
+                _fondoNaranja,
+                _textoNaranja,
               ),
             if (_loading)
               const Padding(
@@ -220,7 +315,7 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
                 child: Center(child: Text('Todavía no tienes reservas.')),
               )
             else
-              ..._reservas.map((r) => _tarjetaServidor(r as Map)),
+              ..._reservas.map((r) => _tarjetaServidor(Map<String, dynamic>.from(r as Map))),
           ],
         ),
       ),
@@ -239,9 +334,45 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
     );
   }
 
-  Widget _tarjetaServidor(Map reserva) {
+  Widget _caja(String texto, Color fondo, Color color) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: fondo, borderRadius: BorderRadius.circular(6)),
+      child: Text(texto, style: TextStyle(fontSize: 13, color: color)),
+    );
+  }
+
+  Widget _filaMonto(String etiqueta, String valor, {bool resaltar = false, Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(child: Text(etiqueta, style: TextStyle(fontSize: 13, color: color ?? AppColors.grey))),
+          Text(
+            valor,
+            style: TextStyle(
+              fontSize: 13,
+              color: color,
+              fontWeight: resaltar ? FontWeight.bold : FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tarjetaServidor(Map<String, dynamic> reserva) {
     final items = (reserva['items'] ?? []) as List<dynamic>;
-    final estado = reserva['estado'].toString();
+    final estado = '${reserva['estado']}';
+    final id = reserva['id_reserva'] as int;
+    final enLinea = _fechaCopia == null;
+    final empresa = reserva['empresa_nombre'];
+    final nota = reserva['numero_nota'];
+    final tieneNota = nota != null && '$nota'.isNotEmpty;
+    final puedeCancelar = reserva['puede_cancelar'] == true && enLinea;
+    final puedePagar = reserva['puede_pagar'] == true && enLinea;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -250,12 +381,18 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Text(
-                    reserva['sucursal']?.toString() ?? '',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Reserva #$id', style: const TextStyle(fontSize: 12, color: AppColors.grey)),
+                      Text(
+                        '${empresa != null ? '$empresa · ' : ''}${reserva['sucursal'] ?? ''}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ],
                   ),
                 ),
                 Container(
@@ -265,7 +402,7 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    estado,
+                    '${reserva['estado_display'] ?? estado}',
                     style: TextStyle(
                       color: _colorEstado(estado),
                       fontWeight: FontWeight.w600,
@@ -276,17 +413,116 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
               ],
             ),
             const SizedBox(height: 6),
-            Text('${reserva['fecha_reserva']} - ${reserva['hora_reserva']}'),
+            Text('Fecha: ${fechaCortaReserva(reserva['fecha_reserva'])}   '
+                'Hora: ${horaCortaReserva(reserva['hora_reserva'])}'),
             const SizedBox(height: 6),
-            ...items.map((item) => Text('• ${item['variante']}')),
-            if (_puedeCancelar(estado) && _fechaCopia == null) ...[
+            const Text('Prendas:', style: TextStyle(fontWeight: FontWeight.w600)),
+            ...items.map((item) => Text(
+                  '• ${item['variante']}'
+                  '${item['precio_unitario'] != null ? ' · Bs ${bsReserva(item['precio_unitario'])}' : ''}',
+                )),
+            // NUEVO (Fase 2): pago, saldo y plazos.
+            if (reserva['monto_total'] != null) ...[
               const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => _cancelar(reserva['id_reserva'] as int),
-                  child: const Text('Cancelar', style: TextStyle(color: AppColors.danger)),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: AppColors.light, borderRadius: BorderRadius.circular(6)),
+                child: Column(
+                  children: [
+                    _filaMonto('Total', 'Bs ${bsReserva(reserva['monto_total'])}'),
+                    if (_tienePago(reserva))
+                      _filaMonto(
+                        'Pagado (${'${reserva['tipo_pago_display'] ?? ''}'.toLowerCase()})',
+                        'Bs ${bsReserva(reserva['monto_pagado'])}',
+                      ),
+                    if (estado == 'CONFIRMADA')
+                      _filaMonto('Saldo al retirar', 'Bs ${bsReserva(reserva['saldo'])}', resaltar: true),
+                  ],
                 ),
+              ),
+            ],
+            if (estado == 'PENDIENTE_PAGO' && reserva['fecha_limite_pago'] != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Págala antes del ${_textoFecha(reserva['fecha_limite_pago'])}; si no, vence y las prendas no quedan apartadas.',
+                style: const TextStyle(fontSize: 13, color: _textoNaranja),
+              ),
+            ],
+            if ((estado == 'CONFIRMADA' || estado == 'PENDIENTE') && reserva['fecha_vencimiento'] != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Retírala hasta el ${_textoFecha(reserva['fecha_vencimiento'])}'
+                '${_tienePago(reserva) ? '; después vence y se devuelve lo pagado menos el ${reserva['porcentaje_retencion']}% del total' : ''}.',
+                style: const TextStyle(fontSize: 13, color: AppColors.grey),
+              ),
+            ],
+            // NUEVO (Fase 2 - CU17): nota de devolución al cancelar o vencer.
+            if (tieneNota) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.greyLight),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Nota de devolución $nota', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    _filaMonto('Pagado', 'Bs ${bsReserva(reserva['monto_pagado'])}'),
+                    _filaMonto(
+                      'Retenido (${reserva['porcentaje_retencion']}% del total)',
+                      'Bs ${bsReserva(reserva['monto_retenido'])}',
+                    ),
+                    _filaMonto(
+                      'Devuelto a la tarjeta',
+                      'Bs ${bsReserva(reserva['monto_devuelto'])}',
+                      resaltar: true,
+                      color: AppColors.success,
+                    ),
+                    if (reserva['fecha_cierre'] != null)
+                      Text(_textoFecha(reserva['fecha_cierre']),
+                          style: const TextStyle(fontSize: 11, color: AppColors.grey)),
+                  ],
+                ),
+              ),
+            ],
+            if (reserva['motivo_cierre'] != null &&
+                '${reserva['motivo_cierre']}'.isNotEmpty &&
+                (estado == 'CANCELADA' || estado == 'VENCIDA')) ...[
+              const SizedBox(height: 6),
+              Text('${reserva['motivo_cierre']}',
+                  style: const TextStyle(fontSize: 13, color: AppColors.grey, fontStyle: FontStyle.italic)),
+            ],
+            if (_idPagando == id) ...[
+              const SizedBox(height: 10),
+              PagoReservaWidget(
+                reserva: reserva,
+                onPagada: _onPagada,
+                onPagarDespues: _cerrarPago,
+              ),
+            ] else if (puedeCancelar || puedePagar) ...[
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (puedeCancelar)
+                    TextButton(
+                      onPressed: _idCancelando == id ? null : () => _cancelar(reserva),
+                      child: Text(
+                        _idCancelando == id ? 'Cancelando...' : 'Cancelar reserva',
+                        style: const TextStyle(color: AppColors.danger),
+                      ),
+                    ),
+                  if (puedePagar) ...[
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () => _abrirPago(reserva),
+                      child: const Text('Pagar ahora'),
+                    ),
+                  ],
+                ],
               ),
             ],
           ],
@@ -313,7 +549,7 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
                 if (offline.confirmadas > 0)
                   OutlinedButton(
                     onPressed: offline.limpiarConfirmadas,
-                    child: const Text('Quitar confirmadas'),
+                    child: const Text('Quitar recibidas'),
                   ),
                 OutlinedButton(
                   onPressed: (!offline.enLinea || offline.sincronizando || offline.pendientes == 0)
@@ -325,7 +561,7 @@ class _ReservationStatusScreenState extends State<ReservationStatusScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              '${offline.pendientes} por enviar · ${offline.confirmadas} confirmada(s)'
+              '${offline.pendientes} por enviar · ${offline.confirmadas} recibida(s)'
               '${offline.rechazadas > 0 ? ' · ${offline.rechazadas} rechazada(s)' : ''}',
               style: const TextStyle(fontSize: 13, color: AppColors.grey),
             ),

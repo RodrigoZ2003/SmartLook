@@ -4,10 +4,12 @@
 // - Cola local de ventas hechas sin internet, cada una con UUID propio,
 //   empresa, sucursal, usuario y la hora en que se hizo.
 // - Estados de cada venta local (igual que la web):
-//     REGISTRADA  guardada en el teléfono, aún no enviada.
-//     ENVIADA     enviada al servidor, esperando respuesta.
-//     CONFIRMADA  el servidor la registró (queda con su número de venta).
-//     RECHAZADA   el servidor no la aceptó (queda con el motivo).
+//     REGISTRADA    guardada en el teléfono, aún no enviada.
+//     ENVIADA       enviada al servidor, esperando respuesta.
+//     CONFIRMADA    el servidor la registró (queda con su número de venta).
+//     EN_CONFLICTO  el servidor la registró, pero con precio distinto o sin
+//                   stock: la revisa el encargado o el administrador (CU08).
+//     RECHAZADA     el servidor no la aceptó (queda con el motivo).
 //   Una venta nunca se borra por haberse intentado enviar: si el envío
 //   falla vuelve a REGISTRADA (el UUID evita duplicados al reenviarla).
 // - Copia local del catálogo y de las sucursales con la fecha de descarga.
@@ -15,7 +17,12 @@
 //   se devuelve; al volver a descargar se restan las ventas sin enviar.
 // - Se sincroniza al recuperar la red, al abrir el POS y con "Sincronizar
 //   ahora"; si hay red pero el servidor no responde, reintenta cada 20 s.
+// MODIFICADO (Fase 2 - CU08, igual que la web): cada venta envía el precio
+// cobrado sin conexión y el correo del cliente (opcional). En SQLite la venta
+// en conflicto se guarda CONFIRMADA (el servidor la registró) con
+// en_conflicto = 1, y se muestra como EN_CONFLICTO.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -32,6 +39,7 @@ class EstadoVentaLocal {
   static const String registrada = 'REGISTRADA';
   static const String enviada = 'ENVIADA';
   static const String confirmada = 'CONFIRMADA';
+  static const String enConflicto = 'EN_CONFLICTO';
   static const String rechazada = 'RECHAZADA';
 }
 
@@ -63,12 +71,16 @@ class VentaLocal {
   final int idSucursal;
   final String sucursal;
   final String metodoPago;
+  final String? correoCliente;
   final double total;
   final DateTime fechaOperacion;
   final String estado;
   final String? mensaje;
   final int intentos;
   final int? idVenta;
+  final DateTime? fechaConfirmacion;
+  final String? tipoConflicto;
+  final List<Map<String, dynamic>> conflictos;
   final List<ItemVentaLocal> items;
 
   const VentaLocal({
@@ -76,27 +88,46 @@ class VentaLocal {
     required this.idSucursal,
     required this.sucursal,
     required this.metodoPago,
+    required this.correoCliente,
     required this.total,
     required this.fechaOperacion,
     required this.estado,
     required this.mensaje,
     required this.intentos,
     required this.idVenta,
+    required this.fechaConfirmacion,
+    required this.tipoConflicto,
+    required this.conflictos,
     required this.items,
   });
 
   factory VentaLocal.fromFila(Map<String, Object?> fila, List<ItemVentaLocal> items) {
+    final enConflicto = ((fila['en_conflicto'] as int?) ?? 0) == 1;
+    List<Map<String, dynamic>> conflictos = const [];
+    final texto = fila['conflictos'] as String?;
+    if (texto != null && texto.isNotEmpty) {
+      try {
+        conflictos = (jsonDecode(texto) as List)
+            .map((c) => Map<String, dynamic>.from(c as Map))
+            .toList();
+      } catch (_) {}
+    }
+    final confirmacion = fila['fecha_confirmacion'] as String?;
     return VentaLocal(
       uuid: fila['uuid'] as String,
       idSucursal: fila['id_sucursal'] as int,
       sucursal: (fila['sucursal'] as String?) ?? '',
       metodoPago: fila['metodo_pago'] as String,
+      correoCliente: fila['correo_cliente'] as String?,
       total: (fila['total'] as num).toDouble(),
       fechaOperacion: DateTime.parse(fila['fecha_operacion'] as String),
-      estado: fila['estado'] as String,
+      estado: enConflicto ? EstadoVentaLocal.enConflicto : fila['estado'] as String,
       mensaje: fila['mensaje'] as String?,
       intentos: (fila['intentos'] as int?) ?? 0,
       idVenta: fila['id_venta'] as int?,
+      fechaConfirmacion: confirmacion != null ? DateTime.tryParse(confirmacion) : null,
+      tipoConflicto: fila['tipo_conflicto'] as String?,
+      conflictos: conflictos,
       items: items,
     );
   }
@@ -110,6 +141,7 @@ class VentaLocal {
 class ResultadoSync {
   int sincronizadas = 0;
   int duplicadas = 0;
+  int enConflicto = 0;
   int rechazadas = 0;
   String? error;
   final DateTime fecha;
@@ -163,8 +195,13 @@ class PosOfflineService extends ChangeNotifier {
   int get pendientes => _ventas.where((v) => v.porEnviar).length;
   int get confirmadas =>
       _ventas.where((v) => v.estado == EstadoVentaLocal.confirmada).length;
+  int get enConflicto =>
+      _ventas.where((v) => v.estado == EstadoVentaLocal.enConflicto).length;
   int get rechazadas =>
       _ventas.where((v) => v.estado == EstadoVentaLocal.rechazada).length;
+
+  /// Ventas que el servidor ya registró (confirmadas y en conflicto).
+  int get registradasEnServidor => confirmadas + enConflicto;
 
   int? get _idUsuario => _auth.currentUser?.idUsuario;
 
@@ -309,6 +346,7 @@ class PosOfflineService extends ChangeNotifier {
         _resultado = ResultadoSync(DateTime.parse(f['fecha'] as String))
           ..sincronizadas = f['sincronizadas'] as int
           ..duplicadas = f['duplicadas'] as int
+          ..enConflicto = (f['en_conflicto'] as int?) ?? 0
           ..rechazadas = f['rechazadas'] as int
           ..error = f['error'] as String?;
       }
@@ -503,6 +541,7 @@ class PosOfflineService extends ChangeNotifier {
     required String sucursal,
     required String metodoPago,
     required List<ItemVentaLocal> items,
+    String? correoCliente,
   }) async {
     final usuario = _auth.currentUser;
     if (usuario == null) {
@@ -511,6 +550,7 @@ class PosOfflineService extends ChangeNotifier {
     final uuid = _uuid.v4();
     final ahora = DateTime.now().toUtc();
     final total = items.fold<double>(0, (s, i) => s + i.precio * i.cantidad);
+    final correo = (correoCliente ?? '').trim().isEmpty ? null : correoCliente!.trim();
     final db = await _db.db;
     await db.transaction((txn) async {
       await txn.insert('ventas_local', {
@@ -520,6 +560,7 @@ class PosOfflineService extends ChangeNotifier {
         'id_sucursal': idSucursal,
         'sucursal': sucursal,
         'metodo_pago': metodoPago,
+        'correo_cliente': correo,
         'total': total,
         'fecha_operacion': ahora.toIso8601String(),
         'estado': EstadoVentaLocal.registrada,
@@ -542,12 +583,16 @@ class PosOfflineService extends ChangeNotifier {
       idSucursal: idSucursal,
       sucursal: sucursal,
       metodoPago: metodoPago,
+      correoCliente: correo,
       total: total,
       fechaOperacion: ahora,
       estado: EstadoVentaLocal.registrada,
       mensaje: null,
       intentos: 0,
       idVenta: null,
+      fechaConfirmacion: null,
+      tipoConflicto: null,
+      conflictos: const [],
       items: items,
     );
   }
@@ -566,7 +611,8 @@ class PosOfflineService extends ChangeNotifier {
     await recargar();
   }
 
-  /// Quita del teléfono el historial de ventas ya confirmadas por el servidor.
+  /// Quita del teléfono el historial de ventas ya registradas por el servidor
+  /// (confirmadas y en conflicto: el conflicto se resuelve en el servidor).
   Future<void> limpiarConfirmadas() async {
     final id = _idUsuario;
     if (id == null) return;
@@ -646,8 +692,14 @@ class PosOfflineService extends ChangeNotifier {
                     'fecha_operacion': v.fechaOperacion.toUtc().toIso8601String(),
                     'id_sucursal': v.idSucursal,
                     'metodo_pago': v.metodoPago,
+                    if (v.correoCliente != null) 'correo_cliente': v.correoCliente,
+                    // CU08: el precio que se cobró sin conexión (el servidor lo compara).
                     'items': v.items
-                        .map((i) => {'id_variante': i.idVariante, 'cantidad': i.cantidad})
+                        .map((i) => {
+                              'id_variante': i.idVariante,
+                              'cantidad': i.cantidad,
+                              'precio_unitario': i.precio.toStringAsFixed(2),
+                            })
                         .toList(),
                   })
               .toList(),
@@ -671,14 +723,21 @@ class PosOfflineService extends ChangeNotifier {
         final uuid = r['uuid']?.toString();
         if (uuid == null || !sinRespuesta.remove(uuid)) continue;
         final estado = r['estado']?.toString();
+        final ahoraConfirmacion = DateTime.now().toUtc().toIso8601String();
         if (estado == 'SINCRONIZADA' || estado == 'DUPLICADA') {
+          String? mensaje = estado == 'DUPLICADA' ? 'Ya estaba registrada en el servidor.' : null;
+          final texto = r['mensaje']?.toString();
+          if (estado == 'SINCRONIZADA' && texto != null && texto != 'Venta registrada.') {
+            mensaje = texto;
+          }
           await txn.update(
             'ventas_local',
             {
               'estado': EstadoVentaLocal.confirmada,
+              'en_conflicto': 0,
               'id_venta': r['id_venta'] is int ? r['id_venta'] as int : null,
-              'fecha_confirmacion': DateTime.now().toUtc().toIso8601String(),
-              'mensaje': estado == 'DUPLICADA' ? 'Ya estaba registrada en el servidor.' : null,
+              'fecha_confirmacion': ahoraConfirmacion,
+              'mensaje': mensaje,
             },
             where: 'uuid = ?',
             whereArgs: [uuid],
@@ -688,6 +747,23 @@ class PosOfflineService extends ChangeNotifier {
           } else {
             resultado.duplicadas += 1;
           }
+        } else if (estado == 'EN_CONFLICTO') {
+          // CU08: el servidor registró la venta, pero queda para revisión.
+          await txn.update(
+            'ventas_local',
+            {
+              'estado': EstadoVentaLocal.confirmada,
+              'en_conflicto': 1,
+              'id_venta': r['id_venta'] is int ? r['id_venta'] as int : null,
+              'fecha_confirmacion': ahoraConfirmacion,
+              'mensaje': r['mensaje']?.toString() ?? 'Venta registrada en conflicto.',
+              'tipo_conflicto': r['tipo_conflicto']?.toString(),
+              'conflictos': jsonEncode(r['conflictos'] ?? []),
+            },
+            where: 'uuid = ?',
+            whereArgs: [uuid],
+          );
+          resultado.enConflicto += 1;
         } else {
           await txn.update(
             'ventas_local',
@@ -722,6 +798,7 @@ class PosOfflineService extends ChangeNotifier {
         'fecha': r.fecha.toIso8601String(),
         'sincronizadas': r.sincronizadas,
         'duplicadas': r.duplicadas,
+        'en_conflicto': r.enConflicto,
         'rechazadas': r.rechazadas,
         'error': r.error,
       });

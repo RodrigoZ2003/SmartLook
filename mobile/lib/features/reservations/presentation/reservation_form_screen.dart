@@ -8,6 +8,10 @@
 // - Los productos y sucursales salen de la copia guardada sin conexión.
 // - Una reserva solo puede tener prendas de una misma tienda, y solo se
 //   ofrecen las sucursales activas de esa tienda.
+// MODIFICADO (Fase 2 - reservas con anticipo, igual que la web): la reserva
+// se crea "Pendiente de pago" y a continuación se paga con Stripe (anticipo
+// o total, ver PagoReservaWidget). Si el cliente paga después, tiene 3
+// horas para hacerlo desde "Mis reservas".
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +19,7 @@ import '../../../core/network/api_client.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../data/reservation_service.dart';
 import '../data/reserva_offline_service.dart';
+import 'pago_reserva_widget.dart';
 
 class ReservationFormScreen extends StatefulWidget {
   const ReservationFormScreen({super.key});
@@ -46,6 +51,11 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
   bool _guardadaSinConexion = false;
   String _error = '';
   String _exito = '';
+
+  // NUEVO (Fase 2): reserva recién creada que espera el pago.
+  Map<String, dynamic>? _reservaPorPagar;
+  Map<String, dynamic>? _reservaPagada;
+  bool _avisoPendientePago = false;
 
   @override
   void initState() {
@@ -184,6 +194,8 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       _error = '';
       _exito = '';
       _guardadaSinConexion = false;
+      _reservaPagada = null;
+      _avisoPendientePago = false;
     });
     if (_sucursalSeleccionada == null) {
       setState(() => _error = 'Selecciona una sucursal.');
@@ -191,6 +203,11 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     }
     if (_fecha == null || _hora == null) {
       setState(() => _error = 'Selecciona fecha y hora.');
+      return;
+    }
+    final ahora = DateTime.now();
+    if (_fecha!.isBefore(DateTime(ahora.year, ahora.month, ahora.day))) {
+      setState(() => _error = 'La fecha de la reserva no puede ser anterior a hoy.');
       return;
     }
     if (_items.isEmpty) {
@@ -204,7 +221,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
 
     setState(() => _enviando = true);
     try {
-      await _reservationService.crearReserva(
+      final reserva = await _reservationService.crearReserva(
         idSucursal: _sucursalSeleccionada!,
         fechaReserva: _fechaStr,
         horaReserva: _horaStr,
@@ -213,7 +230,7 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       if (!mounted) return;
       setState(() {
         _enviando = false;
-        _exito = 'Reserva creada correctamente. Te esperamos en la sucursal elegida.';
+        _reservaPorPagar = reserva;
         _limpiarFormulario();
       });
     } catch (e) {
@@ -264,7 +281,8 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
       setState(() {
         _guardadaSinConexion = true;
         _exito = 'Sin conexión: la reserva quedó guardada en este dispositivo como '
-            '"Registrada localmente" y se enviará sola al recuperar internet.';
+            '"Registrada localmente" y se enviará sola al recuperar internet. Desde ese momento '
+            'tendrás 3 horas para pagarla en "Mis reservas".';
         _limpiarFormulario();
       });
     } catch (_) {
@@ -274,6 +292,27 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     }
   }
 
+  // NUEVO (Fase 2): el pago se confirmó; la prenda quedó apartada.
+  void _onPagada(Map<String, dynamic> reserva) {
+    setState(() {
+      _reservaPorPagar = null;
+      _reservaPagada = reserva;
+    });
+  }
+
+  // NUEVO (Fase 2): el cliente decidió pagar después (tiene 3 horas).
+  void _onPagarDespues() {
+    final reserva = _reservaPorPagar;
+    final limite = fechaReservaLocal(reserva?['fecha_limite_pago']);
+    final hora = limite != null ? ' hasta las ${DateFormat('HH:mm').format(limite)}' : '';
+    setState(() {
+      _reservaPorPagar = null;
+      _exito = 'La Reserva #${reserva?['id_reserva']} quedó pendiente de pago$hora. '
+          'Págala desde "Mis reservas"; si no, vencerá y las prendas no quedarán apartadas.';
+      _avisoPendientePago = true;
+    });
+  }
+
   void _limpiarFormulario() {
     _items.clear();
     _sucursalSeleccionada = null;
@@ -281,10 +320,13 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
     _hora = null;
   }
 
+  void _verMisReservas() {
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final offline = context.watch<ReservaOfflineService>();
-    final empresa = _empresaReserva;
     return Scaffold(
       appBar: AppBar(title: const Text('Reservar Prendas')),
       body: _loading
@@ -303,136 +345,214 @@ class _ReservationFormScreenState extends State<ReservationFormScreen> {
                     _aviso(
                       'No hay productos guardados en este dispositivo: abre el catálogo con conexión una vez para poder reservar sin internet.',
                     ),
-                  const Text('Agregar Prenda', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    value: _productoSeleccionado,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Producto', border: OutlineInputBorder()),
-                    items: _productos
-                        .map<DropdownMenuItem<int>>((p) => DropdownMenuItem(
-                              value: p['id_producto'] as int,
-                              child: Text(
-                                p['empresa_nombre'] != null
-                                    ? '${p['nombre']} (${p['empresa_nombre']})'
-                                    : p['nombre'].toString(),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ))
-                        .toList(),
-                    onChanged: (value) => setState(() {
-                      _productoSeleccionado = value;
-                      _varianteSeleccionada = null;
-                    }),
-                  ),
-                  if (_productoActual != null) ...[
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int>(
-                      value: _varianteSeleccionada,
-                      isExpanded: true,
-                      decoration: const InputDecoration(labelText: 'Talla / Color', border: OutlineInputBorder()),
-                      items: ((_productoActual!['variantes'] ?? []) as List<dynamic>)
-                          .map<DropdownMenuItem<int>>((v) => DropdownMenuItem(
-                                value: v['id_variante'] as int,
-                                child: Text('${v['talla']?['nombre']} - ${v['color']?['nombre']} (Bs ${v['precio']})'),
-                              ))
-                          .toList(),
-                      onChanged: (value) => setState(() => _varianteSeleccionada = value),
-                    ),
+                  if (_reservaPorPagar != null)
+                    PagoReservaWidget(
+                      reserva: _reservaPorPagar!,
+                      onPagada: _onPagada,
+                      onPagarDespues: _onPagarDespues,
+                    )
+                  else ...[
+                    if (_reservaPagada != null) _resumenPagada(_reservaPagada!),
+                    _formulario(offline),
                   ],
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: _agregarItem,
-                      child: const Text('+ Agregar a la reserva'),
-                    ),
-                  ),
-                  if (_items.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      empresa?['nombre'] != null
-                          ? 'Prendas en esta reserva · ${empresa!['nombre']}'
-                          : 'Prendas en esta reserva',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    ..._items.asMap().entries.map(
-                          (entry) => ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(entry.value['label']),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.close, color: AppColors.danger),
-                              onPressed: () => _quitarItem(entry.key),
-                            ),
-                          ),
-                        ),
-                  ],
-                  const Divider(height: 32),
-                  const Text('Datos de la Reserva', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    key: ValueKey('sucursales-${empresa?['id']}'),
-                    value: _sucursalesDisponibles.any((s) => s['id_sucursal'] == _sucursalSeleccionada)
-                        ? _sucursalSeleccionada
-                        : null,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: 'Sucursal', border: OutlineInputBorder()),
-                    items: _sucursalesDisponibles
-                        .map<DropdownMenuItem<int>>((s) => DropdownMenuItem(
-                              value: s['id_sucursal'] as int,
-                              child: Text(s['nombre'].toString()),
-                            ))
-                        .toList(),
-                    onChanged: (value) => setState(() => _sucursalSeleccionada = value),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _elegirFecha,
-                          child: Text(_fecha == null
-                              ? 'Elegir fecha'
-                              : DateFormat('dd/MM/yyyy').format(_fecha!)),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _elegirHora,
-                          child: Text(_hora == null ? 'Elegir hora' : _hora!.format(context)),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (_error.isNotEmpty)
-                    Text(_error, style: const TextStyle(color: AppColors.danger)),
-                  if (_exito.isNotEmpty)
-                    _guardadaSinConexion
-                        ? _aviso(_exito)
-                        : Text(_exito, style: const TextStyle(color: AppColors.success)),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _enviando ? null : _enviar,
-                    style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
-                    child: Text(_enviando
-                        ? 'Enviando...'
-                        : (offline.enLinea ? 'Confirmar Reserva' : 'Guardar reserva sin conexión')),
-                  ),
                 ],
               ),
             ),
     );
   }
 
-  Widget _aviso(String texto) {
+  Widget _formulario(ReservaOfflineService offline) {
+    final empresa = _empresaReserva;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Agregar Prenda', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<int>(
+          value: _productoSeleccionado,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Producto', border: OutlineInputBorder()),
+          items: _productos
+              .map<DropdownMenuItem<int>>((p) => DropdownMenuItem(
+                    value: p['id_producto'] as int,
+                    child: Text(
+                      p['empresa_nombre'] != null
+                          ? '${p['nombre']} (${p['empresa_nombre']})'
+                          : p['nombre'].toString(),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ))
+              .toList(),
+          onChanged: (value) => setState(() {
+            _productoSeleccionado = value;
+            _varianteSeleccionada = null;
+          }),
+        ),
+        if (_productoActual != null) ...[
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            value: _varianteSeleccionada,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Talla / Color', border: OutlineInputBorder()),
+            items: ((_productoActual!['variantes'] ?? []) as List<dynamic>)
+                .map<DropdownMenuItem<int>>((v) => DropdownMenuItem(
+                      value: v['id_variante'] as int,
+                      child: Text('${v['talla']?['nombre']} - ${v['color']?['nombre']} (Bs ${v['precio']})'),
+                    ))
+                .toList(),
+            onChanged: (value) => setState(() => _varianteSeleccionada = value),
+          ),
+        ],
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton(
+            onPressed: _agregarItem,
+            child: const Text('+ Agregar a la reserva'),
+          ),
+        ),
+        if (_items.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text(
+            empresa?['nombre'] != null
+                ? 'Prendas en esta reserva · ${empresa!['nombre']}'
+                : 'Prendas en esta reserva',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          ..._items.asMap().entries.map(
+                (entry) => ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(entry.value['label']),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.close, color: AppColors.danger),
+                    onPressed: () => _quitarItem(entry.key),
+                  ),
+                ),
+              ),
+        ],
+        const Divider(height: 32),
+        const Text('Datos de la Reserva', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<int>(
+          key: ValueKey('sucursales-${empresa?['id']}'),
+          value: _sucursalesDisponibles.any((s) => s['id_sucursal'] == _sucursalSeleccionada)
+              ? _sucursalSeleccionada
+              : null,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Sucursal', border: OutlineInputBorder()),
+          items: _sucursalesDisponibles
+              .map<DropdownMenuItem<int>>((s) => DropdownMenuItem(
+                    value: s['id_sucursal'] as int,
+                    child: Text(s['nombre'].toString()),
+                  ))
+              .toList(),
+          onChanged: (value) => setState(() => _sucursalSeleccionada = value),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _elegirFecha,
+                child: Text(_fecha == null ? 'Elegir fecha' : DateFormat('dd/MM/yyyy').format(_fecha!)),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _elegirHora,
+                child: Text(_hora == null ? 'Elegir hora' : _hora!.format(context)),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_error.isNotEmpty) Text(_error, style: const TextStyle(color: AppColors.danger)),
+        if (_exito.isNotEmpty)
+          (_guardadaSinConexion || _avisoPendientePago)
+              ? _aviso(_exito, conEnlace: true)
+              : Text(_exito, style: const TextStyle(color: AppColors.success)),
+        const SizedBox(height: 16),
+        ElevatedButton(
+          onPressed: _enviando ? null : _enviar,
+          style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+          child: Text(_enviando
+              ? 'Enviando...'
+              : (offline.enLinea ? 'Reservar y pagar' : 'Guardar reserva sin conexión')),
+        ),
+      ],
+    );
+  }
+
+  Widget _resumenPagada(Map<String, dynamic> r) {
+    const verde = Color(0xFF1B5E20);
+    final vence = fechaReservaLocal(r['fecha_vencimiento']);
+    final tieneSaldo = montoReserva(r['saldo']) > 0;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: const Color(0xFFE8F5E9), borderRadius: BorderRadius.circular(8)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '¡Reserva #${r['id_reserva']} confirmada!',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: verde),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Pagaste Bs ${bsReserva(r['monto_pagado'])} '
+            '(${'${r['tipo_pago_display'] ?? ''}'.toLowerCase()}) y tus prendas quedaron apartadas en ${r['sucursal']}.',
+            style: const TextStyle(color: verde),
+          ),
+          if (tieneSaldo) ...[
+            const SizedBox(height: 4),
+            Text.rich(
+              TextSpan(
+                text: 'Saldo a pagar al retirar: ',
+                children: [
+                  TextSpan(
+                    text: 'Bs ${bsReserva(r['saldo'])}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const TextSpan(text: '.'),
+                ],
+              ),
+              style: const TextStyle(color: verde),
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            'Te esperamos el ${fechaCortaReserva(r['fecha_reserva'])} a las ${horaCortaReserva(r['hora_reserva'])}.'
+            '${vence != null ? ' Puedes retirarla hasta el ${DateFormat('dd/MM/yyyy HH:mm').format(vence)}; después vence y se devuelve lo pagado menos el ${r['porcentaje_retencion']}% del total.' : ''}',
+            style: const TextStyle(color: verde),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(onPressed: _verMisReservas, child: const Text('Ver mis reservas')),
+        ],
+      ),
+    );
+  }
+
+  Widget _aviso(String texto, {bool conEnlace = false}) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: _fondoNaranja, borderRadius: BorderRadius.circular(6)),
-      child: Text(texto, style: const TextStyle(fontSize: 13, color: _textoNaranja)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(texto, style: const TextStyle(fontSize: 13, color: _textoNaranja)),
+          if (conEnlace)
+            TextButton(
+              onPressed: _verMisReservas,
+              style: TextButton.styleFrom(padding: EdgeInsets.zero, foregroundColor: _textoNaranja),
+              child: const Text('Ver mis reservas', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+        ],
+      ),
     );
   }
 }

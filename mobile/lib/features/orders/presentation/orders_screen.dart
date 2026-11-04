@@ -5,6 +5,12 @@
 // NUEVO (devoluciones): botón "Solicitar devolución" en pedidos DELIVERY
 // ya ENTREGADA, badge "Devuelto"/"Entregado (devolución parcial)" usando
 // los campos devuelto/tiene_devolucion que ahora manda OrderSerializer.
+// MODIFICADO (Fase 2 - CU12, igual que la web): el botón depende de
+// puede_solicitar_devolucion (plazo de 7 días desde la entrega) y cada
+// pedido muestra sus devoluciones con nota, estado y reembolso.
+// MODIFICADO (Fase 2 - CU05): cada prenda de un pedido con delivery
+// entregado se puede cambiar por otra talla o color (puede_solicitar_cambio)
+// y muestra el estado de su último cambio.
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -12,6 +18,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
 import '../../../shared/theme/app_colors.dart';
+import '../../cambios/presentation/cambio_solicitud_screen.dart';
 import 'devolucion_form_screen.dart';
 
 class OrdersScreen extends StatefulWidget {
@@ -97,8 +104,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return entregado ? const Color(0xFF1B7F4B) : AppColors.primary;
   }
 
-  bool _puedeDevolver(Map<String, dynamic> o) {
-    return o['tipo_entrega'] == 'DELIVERY' && o['estado'] == 'ENTREGADA' && !_devuelto(o);
+  // Fase 2: el backend decide (entregado, dentro de los 7 días y con prendas por devolver).
+  bool _puedeDevolver(Map<String, dynamic> o) => o['puede_solicitar_devolucion'] == true;
+
+  // Fase 2 (CU05): la prenda se puede cambiar si el pedido está en plazo y no
+  // tiene un cambio en curso (uno rechazado no cuenta).
+  bool _puedeCambiar(Map<String, dynamic> o, Map item) {
+    if (o['puede_solicitar_cambio'] != true) return false;
+    final cambio = item['cambio'] as Map?;
+    return cambio == null || cambio['estado'] == 'RECHAZADO';
   }
 
   String _fecha(dynamic iso) {
@@ -107,20 +121,53 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Future<void> _abrirDevolucion(Map<String, dynamic> pedido) async {
-    final mensajes = await Navigator.push<List<String>>(
+    final devolucion = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(builder: (context) => DevolucionFormScreen(pedido: pedido)),
     );
-    if (mensajes == null || !mounted) return;
+    if (devolucion == null || !mounted) return;
+    await _mostrarResultado(
+      'Devolución solicitada',
+      devolucion['numero_nota'],
+      [devolucion['mensaje_cliente'], devolucion['resumen_reembolso']],
+    );
+  }
 
+  Future<void> _abrirCambio(Map item) async {
+    final cambio = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CambioSolicitudScreen(
+          idOrdenItem: item['id_item'] as int,
+          prenda: '${item['variante']}',
+        ),
+      ),
+    );
+    if (cambio == null || !mounted) return;
+    await _mostrarResultado(
+      'Cambio solicitado',
+      cambio['numero_nota'],
+      [
+        '${cambio['prenda_devuelta']} → ${cambio['prenda_entregada']}',
+        cambio['mensaje_cliente'],
+      ],
+    );
+  }
+
+  Future<void> _mostrarResultado(String titulo, dynamic nota, List<dynamic> lineas) async {
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Devolución registrada'),
+        title: Text(titulo),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [for (final m in mensajes) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(m))],
+          children: [
+            if (nota != null) Text('Nota $nota', style: const TextStyle(fontWeight: FontWeight.bold)),
+            for (final l in lineas)
+              if (l != null && '$l'.isNotEmpty)
+                Padding(padding: const EdgeInsets.only(top: 6), child: Text('$l')),
+          ],
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
@@ -163,6 +210,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final delivery = o['delivery'] as Map?;
     final esDelivery = o['tipo_entrega'] == 'DELIVERY' && delivery != null;
     final items = (o['items'] ?? []) as List;
+    final devoluciones = (o['devoluciones'] ?? []) as List;
     final color = _colorEstado(o);
 
     return Card(
@@ -199,17 +247,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ],
             ),
             const SizedBox(height: 10),
-            for (final i in items)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(child: Text('${i['cantidad']} x ${i['variante']}')),
-                    Text('Bs ${i['subtotal']}'),
-                  ],
-                ),
-              ),
+            for (final i in items) _filaItem(o, i as Map),
             const Divider(height: 20),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -237,25 +275,108 @@ class _OrdersScreenState extends State<OrdersScreen> {
               const SizedBox(height: 8),
               Text('Retiro en sucursal: ${o['sucursal']}', style: const TextStyle(fontSize: 13)),
             ],
-            if (_tieneDevolucion(o)) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Este pedido tiene una devolución registrada.',
-                style: TextStyle(fontSize: 12, color: Color(0xFF6A1B9A)),
-              ),
+            if (o['puede_solicitar_cambio'] == true && o['cambio_vence'] != null) ...[
+              const SizedBox(height: 8),
+              Text('Puedes cambiar talla o color hasta el ${_fecha(o['cambio_vence'])}.',
+                  style: const TextStyle(fontSize: 12, color: AppColors.grey)),
             ],
+            // NUEVO (Fase 2 - CU12): devoluciones del pedido con su nota y reembolso.
+            for (final d in devoluciones) _filaDevolucion(Map<String, dynamic>.from(d as Map)),
             if (_puedeDevolver(o)) ...[
               const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => _abrirDevolucion(o),
-                  child: const Text('Solicitar devolución'),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      o['devolucion_vence'] != null
+                          ? 'Puedes pedir una devolución hasta el ${_fecha(o['devolucion_vence'])}.'
+                          : '',
+                      style: const TextStyle(fontSize: 12, color: AppColors.grey),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _abrirDevolucion(o),
+                    child: const Text('Solicitar devolución'),
+                  ),
+                ],
               ),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _filaItem(Map<String, dynamic> o, Map i) {
+    final cambio = i['cambio'] as Map?;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(child: Text('${i['cantidad']} x ${i['variante']}')),
+              Text('Bs ${i['subtotal']}'),
+            ],
+          ),
+          if (cambio != null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE3F2FD),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Cambio ${cambio['numero_nota'] ?? ''} · ${cambio['estado_display'] ?? cambio['estado'] ?? ''}',
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF0D47A1)),
+                  ),
+                  if (cambio['mensaje_cliente'] != null)
+                    Text('${cambio['mensaje_cliente']}',
+                        style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
+                ],
+              ),
+            ),
+          if (_puedeCambiar(o, i))
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: () => _abrirCambio(i),
+                child: const Text('Cambiar talla o color'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filaDevolucion(Map<String, dynamic> d) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3E5F5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Devolución ${d['numero_nota'] ?? ''} · ${d['estado_display'] ?? d['estado'] ?? ''}',
+            style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF6A1B9A)),
+          ),
+          if (d['es_anterior'] != true && d['monto_reembolso'] != null)
+            Text('Reembolso: Bs ${d['monto_reembolso']}', style: const TextStyle(fontSize: 13)),
+          if (d['mensaje_cliente'] != null)
+            Text('${d['mensaje_cliente']}', style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
+        ],
       ),
     );
   }

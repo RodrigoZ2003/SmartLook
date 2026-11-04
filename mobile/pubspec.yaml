@@ -1,5 +1,5 @@
 name: smartlook_mobile
-description: SmartLook - Sistema omnicanal e-commerce y POS multi-sucursal
+description: Tienda de ropa y punto de venta de SmartLook
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -54,6 +54,20 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.1
+  # NUEVO: genera el ícono de la app (Android) a partir del ojo del logotipo.
+  flutter_launcher_icons: ^0.14.1
+
+# NUEVO: ícono de la app, el mismo ojo que el favicon de la web.
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icons/app_icon.jpg"
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true
+
+  # NUEVO: imágenes de la app (logotipo del login e ícono).
+  assets:
+    - assets/images/
+    - assets/icons/

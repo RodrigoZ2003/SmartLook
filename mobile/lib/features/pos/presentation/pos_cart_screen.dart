@@ -8,15 +8,25 @@
 // - La búsqueda y las sucursales usan la copia local sin conexión, con la
 //   fecha de esa copia (puede estar desactualizada).
 // - Sin conexión solo se aceptan ventas al contado en efectivo.
+// MODIFICADO (Fase 2 - reservas con anticipo): se listan las reservas
+// confirmadas (pagadas) de la sucursal; al agregar una, se cobra solo su
+// saldo y se retira completa (todas sus prendas). Con reservas en la venta
+// no se puede vender sin conexión.
+// MODIFICADO (Fase 2 - CU08, igual que la web): cliente opcional por correo
+// (en línea y sin conexión), ventas "En conflicto" en la cola con su detalle
+// y acceso a "Operaciones sin conexión" (con la cantidad de conflictos sin
+// resolver) para SUPER_ADMIN, ADMIN_EMPRESA y ENCARGADO_SUCURSAL.
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../admin/data/inventory_service.dart';
 import '../data/pos_offline_service.dart';
 import '../data/pos_sale_service.dart';
+import 'sync_operaciones_screen.dart';
 
 class ItemVenta {
   final int idVariante;
@@ -25,6 +35,41 @@ class ItemVenta {
   int cantidad;
 
   ItemVenta({required this.idVariante, required this.nombre, required this.precio, this.cantidad = 1});
+}
+
+/// NUEVO (Fase 2): reserva confirmada que se retira en caja (se cobra solo el saldo).
+class ReservaVenta {
+  final int idReserva;
+  final String cliente;
+  final List<Map<String, dynamic>> prendas;
+  final double total;
+  final double pagado;
+  final double saldo;
+
+  ReservaVenta({
+    required this.idReserva,
+    required this.cliente,
+    required this.prendas,
+    required this.total,
+    required this.pagado,
+    required this.saldo,
+  });
+
+  factory ReservaVenta.desdeJson(Map<String, dynamic> r) {
+    double numero(dynamic v) => double.tryParse('${v ?? ''}') ?? 0;
+    final prendas = ((r['items'] ?? []) as List<dynamic>)
+        .map((i) => Map<String, dynamic>.from(i as Map))
+        .where((i) => i['estado'] == null || i['estado'] == 'PENDIENTE')
+        .toList();
+    return ReservaVenta(
+      idReserva: r['id_reserva'] as int,
+      cliente: '${r['cliente'] ?? ''}',
+      prendas: prendas,
+      total: numero(r['monto_total']),
+      pagado: numero(r['monto_pagado']),
+      saldo: numero(r['saldo']),
+    );
+  }
 }
 
 class PosCartScreen extends StatefulWidget {
@@ -37,13 +82,19 @@ class PosCartScreen extends StatefulWidget {
 class _PosCartScreenState extends State<PosCartScreen> {
   static const Color _naranja = Color(0xFFE65100);
   static const Color _fondoNaranja = Color(0xFFFFF3E0);
+  static const String _errorReservasOffline =
+      'Sin conexión no se pueden cobrar reservas. Quítalas de la venta o espera a recuperar internet.';
+  static final RegExp _patronCorreo = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+  static const List<String> _rolesGestionConflictos = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
 
   late final InventoryService _inventoryService;
   late final PosSaleService _posSaleService;
   late final PosOfflineService _offline;
+  late final bool _esGestor;
   final DateFormat _fmt = DateFormat('dd/MM/yyyy HH:mm');
 
   final TextEditingController _busquedaController = TextEditingController();
+  final TextEditingController _correoController = TextEditingController();
   List<dynamic> _resultados = [];
   bool _buscando = false;
   bool _busquedaLocal = false;
@@ -52,6 +103,14 @@ class _PosCartScreenState extends State<PosCartScreen> {
   List<dynamic> _sucursales = [];
   int? _sucursalSeleccionada;
   String _metodoPago = 'EFECTIVO';
+
+  // NUEVO (Fase 2): reservas por retirar de la sucursal y las agregadas a la venta.
+  List<ReservaVenta> _reservasDisponibles = [];
+  final List<ReservaVenta> _reservasVenta = [];
+  bool _cargandoReservas = false;
+
+  // NUEVO (CU08): conflictos sin resolver de la empresa (solo encargado/administrador).
+  int _conflictosPendientes = 0;
 
   bool _registrando = false;
   String? _error;
@@ -63,6 +122,8 @@ class _PosCartScreenState extends State<PosCartScreen> {
   void initState() {
     super.initState();
     final apiClient = context.read<ApiClient>();
+    final usuario = context.read<AuthService>().currentUser;
+    _esGestor = _rolesGestionConflictos.any((r) => usuario?.hasRole(r) ?? false);
     _inventoryService = InventoryService(apiClient: apiClient);
     _posSaleService = PosSaleService(apiClient: apiClient);
     _offline = context.read<PosOfflineService>();
@@ -73,12 +134,14 @@ class _PosCartScreenState extends State<PosCartScreen> {
     _offline.prepararCatalogo();
     // Si quedaron ventas pendientes de otra vez, se intentan enviar al entrar.
     _offline.sincronizar();
+    _cargarConflictosPendientes();
   }
 
   @override
   void dispose() {
     _offline.removeListener(_alCambiarConexion);
     _busquedaController.dispose();
+    _correoController.dispose();
     super.dispose();
   }
 
@@ -90,7 +153,30 @@ class _PosCartScreenState extends State<PosCartScreen> {
     if (!enLinea && _metodoPago != 'EFECTIVO') {
       setState(() => _metodoPago = 'EFECTIVO');
     }
-    if (enLinea) _cargarSucursales();
+    if (enLinea) {
+      _cargarSucursales();
+      _cargarReservas();
+      _cargarConflictosPendientes();
+    }
+  }
+
+  // ---- Conflictos (CU08) ----
+
+  Future<void> _cargarConflictosPendientes() async {
+    if (!_esGestor || !_offline.enLinea) return;
+    try {
+      final resumen = await _posSaleService.resumenOperaciones();
+      if (!mounted) return;
+      setState(() => _conflictosPendientes = (resumen['pendientes'] as int?) ?? 0);
+    } catch (_) {}
+  }
+
+  Future<void> _abrirOperaciones() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SyncOperacionesScreen()),
+    );
+    _cargarConflictosPendientes();
   }
 
   // ---- Sucursales ----
@@ -115,6 +201,52 @@ class _PosCartScreenState extends State<PosCartScreen> {
     final locales = await _offline.sucursalesLocales();
     if (!mounted) return;
     setState(() => _sucursales = locales);
+  }
+
+  void _onCambioSucursal(int? value) {
+    setState(() {
+      _sucursalSeleccionada = value;
+      // Las reservas son de una sucursal: al cambiarla se quitan de la venta.
+      _reservasVenta.clear();
+      _reservasDisponibles = [];
+    });
+    _cargarReservas();
+  }
+
+  // ---- Reservas por retirar (Fase 2) ----
+
+  Future<void> _cargarReservas() async {
+    final idSucursal = _sucursalSeleccionada;
+    if (idSucursal == null || !_offline.enLinea) return;
+    setState(() => _cargandoReservas = true);
+    try {
+      final lista = await _posSaleService.reservasPorRetirar(idSucursal);
+      if (!mounted || idSucursal != _sucursalSeleccionada) return;
+      setState(() {
+        _reservasDisponibles = lista
+            .map((r) => ReservaVenta.desdeJson(Map<String, dynamic>.from(r as Map)))
+            .where((r) => r.prendas.isNotEmpty)
+            .toList();
+        _cargandoReservas = false;
+      });
+    } catch (e) {
+      if (_offline.esErrorDeRed(e)) _offline.marcarSinConexion();
+      if (mounted) setState(() => _cargandoReservas = false);
+    }
+  }
+
+  bool _reservaAgregada(ReservaVenta r) => _reservasVenta.any((x) => x.idReserva == r.idReserva);
+
+  void _agregarReserva(ReservaVenta r) {
+    if (_reservaAgregada(r)) return;
+    setState(() {
+      _reservasVenta.add(r);
+      _error = null;
+    });
+  }
+
+  void _quitarReserva(ReservaVenta r) {
+    setState(() => _reservasVenta.removeWhere((x) => x.idReserva == r.idReserva));
   }
 
   // ---- Búsqueda ----
@@ -191,15 +323,30 @@ class _PosCartScreenState extends State<PosCartScreen> {
 
   void _quitar(ItemVenta item) => setState(() => _items.remove(item));
 
-  double get _total => _items.fold(0.0, (acc, item) => acc + item.precio * item.cantidad);
+  double get _totalPrendas => _items.fold(0.0, (acc, item) => acc + item.precio * item.cantidad);
+
+  double get _totalSaldos => _reservasVenta.fold(0.0, (acc, r) => acc + r.saldo);
+
+  double get _total => _totalPrendas + _totalSaldos;
+
+  bool get _ventaVacia => _items.isEmpty && _reservasVenta.isEmpty;
+
+  String get _correo => _correoController.text.trim();
 
   String get _qrData =>
       'SmartLook - Pago QR\nTotal: Bs ${_total.toStringAsFixed(2)}\nReferencia: SL-${DateTime.now().millisecondsSinceEpoch}';
 
   // ---- Registro ----
 
+  List<Map<String, dynamic>> get _itemsPayload => [
+        ..._items.map((i) => {'id_variante': i.idVariante, 'cantidad': i.cantidad}),
+        // Fase 2: la reserva se retira completa (todas sus prendas pendientes).
+        for (final r in _reservasVenta)
+          for (final p in r.prendas) {'id_reserva_item': p['id_item'], 'cantidad': 1},
+      ];
+
   Future<void> _registrarVenta() async {
-    if (_items.isEmpty) {
+    if (_ventaVacia) {
       setState(() => _error = 'Agrega al menos una prenda a la venta.');
       return;
     }
@@ -207,8 +354,16 @@ class _PosCartScreenState extends State<PosCartScreen> {
       setState(() => _error = 'Selecciona la sucursal.');
       return;
     }
+    if (_correo.isNotEmpty && !_patronCorreo.hasMatch(_correo)) {
+      setState(() => _error = 'El correo del cliente no es válido (o déjalo vacío).');
+      return;
+    }
     setState(() => _error = null);
     if (!_offline.enLinea) {
+      if (_reservasVenta.isNotEmpty) {
+        setState(() => _error = _errorReservasOffline);
+        return;
+      }
       await _guardarSinConexion();
       return;
     }
@@ -218,7 +373,8 @@ class _PosCartScreenState extends State<PosCartScreen> {
       final venta = await _posSaleService.registrarVenta(
         idSucursal: _sucursalSeleccionada!,
         metodoPago: _metodoPago,
-        items: _items.map((i) => {'id_variante': i.idVariante, 'cantidad': i.cantidad}).toList(),
+        items: _itemsPayload,
+        correoCliente: _correo.isEmpty ? null : _correo,
       );
       if (!mounted) return;
       setState(() {
@@ -228,9 +384,14 @@ class _PosCartScreenState extends State<PosCartScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _registrando = false);
-      // Se cortó la conexión justo al registrar: la venta pasa a la cola local.
+      // Se cortó la conexión justo al registrar: la venta pasa a la cola local
+      // (salvo que tenga reservas: esas solo se cobran en línea).
       if (_offline.esErrorDeRed(e)) {
         _offline.marcarSinConexion();
+        if (_reservasVenta.isNotEmpty) {
+          setState(() => _error = _errorReservasOffline);
+          return;
+        }
         await _guardarSinConexion();
         return;
       }
@@ -276,6 +437,7 @@ class _PosCartScreenState extends State<PosCartScreen> {
         sucursal: sucursal,
         metodoPago: _metodoPago,
         items: items,
+        correoCliente: _correo,
       );
       if (mounted) setState(() => _ventaOffline = venta);
     } catch (_) {
@@ -288,7 +450,10 @@ class _PosCartScreenState extends State<PosCartScreen> {
   void _nuevaVenta() {
     setState(() {
       _items.clear();
+      _reservasVenta.clear();
+      _reservasDisponibles = [];
       _busquedaController.clear();
+      _correoController.clear();
       _resultados = [];
       _busquedaLocal = false;
       _sucursalSeleccionada = null;
@@ -297,6 +462,7 @@ class _PosCartScreenState extends State<PosCartScreen> {
       _ventaOffline = null;
       _error = null;
     });
+    _cargarConflictosPendientes();
   }
 
   Future<void> _descartar(VentaLocal venta) async {
@@ -320,6 +486,8 @@ class _PosCartScreenState extends State<PosCartScreen> {
     switch (venta.estado) {
       case EstadoVentaLocal.confirmada:
         return venta.idVenta != null ? 'Confirmada · Venta #${venta.idVenta}' : 'Confirmada';
+      case EstadoVentaLocal.enConflicto:
+        return venta.idVenta != null ? 'En conflicto · Venta #${venta.idVenta}' : 'En conflicto';
       case EstadoVentaLocal.rechazada:
         return 'Rechazada';
       case EstadoVentaLocal.enviada:
@@ -335,6 +503,8 @@ class _PosCartScreenState extends State<PosCartScreen> {
         return (const Color(0xFFE3F2FD), const Color(0xFF0D47A1));
       case EstadoVentaLocal.confirmada:
         return (const Color(0xFFE8F5E9), const Color(0xFF1B5E20));
+      case EstadoVentaLocal.enConflicto:
+        return (const Color(0xFFFFF8E1), const Color(0xFF8A6D00));
       case EstadoVentaLocal.rechazada:
         return (const Color(0xFFFDECEA), const Color(0xFFC0392B));
       default:
@@ -352,11 +522,39 @@ class _PosCartScreenState extends State<PosCartScreen> {
     if (_ventaOffline != null) return _comprobanteOffline(_ventaOffline!);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Punto de Venta')),
+      appBar: AppBar(
+        title: const Text('Punto de Venta'),
+        actions: [
+          if (_esGestor)
+            IconButton(
+              tooltip: 'Operaciones sin conexión',
+              onPressed: _abrirOperaciones,
+              icon: Badge(
+                isLabelVisible: _conflictosPendientes > 0,
+                label: Text('$_conflictosPendientes'),
+                child: const Icon(Icons.sync_problem),
+              ),
+            ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           _bannerConexion(offline),
+          if (_esGestor && _conflictosPendientes > 0) ...[
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: _abrirOperaciones,
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(8)),
+                child: Text(
+                  'Operaciones sin conexión: $_conflictosPendientes en conflicto por revisar. Toca para verlas.',
+                  style: const TextStyle(color: Color(0xFF8A6D00), fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           const Text('Buscar prenda (código o nombre)', style: TextStyle(fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
@@ -398,11 +596,29 @@ class _PosCartScreenState extends State<PosCartScreen> {
               )),
 
           const SizedBox(height: 20),
+          DropdownButtonFormField<int>(
+            value: _sucursales.any((s) => s['id_sucursal'] == _sucursalSeleccionada)
+                ? _sucursalSeleccionada
+                : null,
+            decoration: const InputDecoration(labelText: 'Sucursal', border: OutlineInputBorder()),
+            items: _sucursales
+                .map((s) => DropdownMenuItem<int>(value: s['id_sucursal'] as int, child: Text(s['nombre'].toString())))
+                .toList(),
+            onChanged: _onCambioSucursal,
+          ),
+          if (_sucursalSeleccionada != null) ...[
+            const SizedBox(height: 12),
+            _seccionReservas(offline),
+          ],
+
+          const SizedBox(height: 20),
           const Divider(),
           const Text('Venta actual', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
 
-          if (_items.isEmpty) const Text('Sin prendas agregadas.', style: TextStyle(color: AppColors.grey)),
+          if (_ventaVacia) const Text('Sin prendas agregadas.', style: TextStyle(color: AppColors.grey)),
+
+          ..._reservasVenta.map(_tarjetaReservaVenta),
 
           ..._items.map((item) => Card(
                 margin: const EdgeInsets.only(bottom: 8),
@@ -429,18 +645,31 @@ class _PosCartScreenState extends State<PosCartScreen> {
               Text('Bs ${_total.toStringAsFixed(2)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.accent)),
             ],
           ),
+          if (_reservasVenta.isNotEmpty)
+            Text(
+              'Incluye el saldo de ${_reservasVenta.length} reserva(s): Bs ${_totalSaldos.toStringAsFixed(2)}.',
+              style: const TextStyle(fontSize: 12, color: AppColors.grey),
+            ),
           const SizedBox(height: 16),
 
-          DropdownButtonFormField<int>(
-            value: _sucursales.any((s) => s['id_sucursal'] == _sucursalSeleccionada)
-                ? _sucursalSeleccionada
-                : null,
-            decoration: const InputDecoration(labelText: 'Sucursal', border: OutlineInputBorder()),
-            items: _sucursales
-                .map((s) => DropdownMenuItem<int>(value: s['id_sucursal'] as int, child: Text(s['nombre'].toString())))
-                .toList(),
-            onChanged: (value) => setState(() => _sucursalSeleccionada = value),
+          // NUEVO (CU08): cliente opcional.
+          TextField(
+            controller: _correoController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Correo del cliente (opcional)',
+              hintText: 'cliente@correo.com',
+              border: OutlineInputBorder(),
+            ),
           ),
+          if (!offline.enLinea)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'Sin conexión se valida al sincronizar; si no existe, la venta queda sin cliente.',
+                style: TextStyle(fontSize: 12, color: AppColors.grey),
+              ),
+            ),
           const SizedBox(height: 12),
 
           DropdownButtonFormField<String>(
@@ -472,8 +701,16 @@ class _PosCartScreenState extends State<PosCartScreen> {
                 style: TextStyle(fontSize: 12, color: _naranja),
               ),
             ),
+          if (!offline.enLinea && _reservasVenta.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                _errorReservasOffline,
+                style: TextStyle(fontSize: 12, color: AppColors.danger),
+              ),
+            ),
 
-          if (_metodoPago == 'QR' && _items.isNotEmpty) ...[
+          if (_metodoPago == 'QR' && !_ventaVacia) ...[
             const SizedBox(height: 16),
             const Text(
               'Mostrale este código al cliente para que pague desde su app bancaria.',
@@ -495,7 +732,7 @@ class _PosCartScreenState extends State<PosCartScreen> {
 
           const SizedBox(height: 16),
           ElevatedButton(
-            onPressed: _registrando ? null : _registrarVenta,
+            onPressed: (_registrando || (!offline.enLinea && _reservasVenta.isNotEmpty)) ? null : _registrarVenta,
             style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
             child: Text(_registrando
                 ? 'Registrando...'
@@ -508,6 +745,122 @@ class _PosCartScreenState extends State<PosCartScreen> {
           ],
           const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  /// NUEVO (Fase 2): reservas pagadas de la sucursal, listas para retirar.
+  Widget _seccionReservas(PosOfflineService offline) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text('Reservas por retirar',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                ),
+                if (offline.enLinea)
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: _cargandoReservas ? null : _cargarReservas,
+                  ),
+              ],
+            ),
+            if (!offline.enLinea)
+              const Text(
+                'Sin conexión no se pueden cobrar reservas.',
+                style: TextStyle(fontSize: 13, color: _naranja),
+              )
+            else if (_cargandoReservas)
+              const Padding(
+                padding: EdgeInsets.all(8),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_reservasDisponibles.isEmpty)
+              const Text(
+                'No hay reservas pagadas por retirar en esta sucursal.',
+                style: TextStyle(fontSize: 13, color: AppColors.grey),
+              )
+            else
+              for (final r in _reservasDisponibles)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: Color(0xFFF0F0F0))),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Reserva #${r.idReserva} · ${r.cliente}',
+                                style: const TextStyle(fontWeight: FontWeight.w600)),
+                            Text(r.prendas.map((p) => '${p['variante']}').join(', '),
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF555555))),
+                            Text(
+                              'Pagado Bs ${r.pagado.toStringAsFixed(2)} · Saldo Bs ${r.saldo.toStringAsFixed(2)}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _reservaAgregada(r)
+                          ? const Text('Agregada', style: TextStyle(color: AppColors.success))
+                          : ElevatedButton(
+                              onPressed: () => _agregarReserva(r),
+                              child: const Text('Agregar'),
+                            ),
+                    ],
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tarjetaReservaVenta(ReservaVenta r) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      color: const Color(0xFFF5F5FA),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Reserva #${r.idReserva} · ${r.cliente}',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                  ...r.prendas.map((p) => Text('• ${p['variante']}', style: const TextStyle(fontSize: 13))),
+                  Text(
+                    'Total Bs ${r.total.toStringAsFixed(2)} · Pagado al reservar Bs ${r.pagado.toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 12, color: AppColors.grey),
+                  ),
+                  const Text('Se retira completa.', style: TextStyle(fontSize: 12, color: AppColors.grey)),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const Text('Saldo', style: TextStyle(fontSize: 12, color: AppColors.grey)),
+                Text('Bs ${r.saldo.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w700)),
+              ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: AppColors.danger),
+              onPressed: () => _quitarReserva(r),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -584,10 +937,10 @@ class _PosCartScreenState extends State<PosCartScreen> {
               spacing: 8,
               runSpacing: 4,
               children: [
-                if (offline.confirmadas > 0)
+                if (offline.registradasEnServidor > 0)
                   OutlinedButton(
                     onPressed: offline.limpiarConfirmadas,
-                    child: const Text('Quitar confirmadas'),
+                    child: const Text('Quitar registradas'),
                   ),
                 OutlinedButton(
                   onPressed: (!offline.enLinea || offline.sincronizando || offline.pendientes == 0)
@@ -600,6 +953,7 @@ class _PosCartScreenState extends State<PosCartScreen> {
             const SizedBox(height: 8),
             Text(
               '${offline.pendientes} por enviar · ${offline.confirmadas} confirmada(s)'
+              '${offline.enConflicto > 0 ? ' · ${offline.enConflicto} en conflicto' : ''}'
               '${offline.rechazadas > 0 ? ' · ${offline.rechazadas} rechazada(s)' : ''}',
               style: const TextStyle(fontSize: 13, color: AppColors.grey),
             ),
@@ -614,8 +968,8 @@ class _PosCartScreenState extends State<PosCartScreen> {
                 child: Text(
                   r.error ??
                       'Última sincronización (${DateFormat('dd/MM HH:mm').format(r.fecha.toLocal())}): '
-                          '${r.sincronizadas} registrada(s), ${r.duplicadas} ya registrada(s) antes, '
-                          '${r.rechazadas} rechazada(s).',
+                          '${r.sincronizadas} registrada(s), ${r.enConflicto} en conflicto, '
+                          '${r.duplicadas} ya registrada(s) antes, ${r.rechazadas} rechazada(s).',
                   style: TextStyle(
                     fontSize: 13,
                     color: r.error != null ? const Color(0xFF8E2A20) : const Color(0xFF1B5E20),
@@ -632,6 +986,7 @@ class _PosCartScreenState extends State<PosCartScreen> {
 
   Widget _filaVenta(VentaLocal v) {
     final (fondo, texto) = _coloresEstado(v.estado);
+    final enConflicto = v.estado == EstadoVentaLocal.enConflicto;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: const BoxDecoration(
@@ -661,16 +1016,34 @@ class _PosCartScreenState extends State<PosCartScreen> {
             '${_fmt.format(v.fechaOperacion.toLocal())} · ${v.prendas} prenda(s) · Bs ${v.total.toStringAsFixed(2)}',
             style: const TextStyle(fontSize: 13, color: Color(0xFF555555)),
           ),
+          if (v.correoCliente != null)
+            Text('Cliente: ${v.correoCliente}', style: const TextStyle(fontSize: 13, color: Color(0xFF555555))),
           Text('Código: ${v.uuid}',
               style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF999999))),
-          if (v.mensaje != null && v.mensaje!.isNotEmpty)
+          if (v.estado == EstadoVentaLocal.confirmada && v.fechaConfirmacion != null)
             Text(
-              v.estado == EstadoVentaLocal.rechazada ? 'Motivo: ${v.mensaje}' : v.mensaje!,
-              style: TextStyle(
-                fontSize: 13,
-                color: v.estado == EstadoVentaLocal.rechazada ? const Color(0xFFC0392B) : AppColors.grey,
-              ),
+              'Confirmada el ${_fmt.format(v.fechaConfirmacion!.toLocal())}'
+              '${v.mensaje != null ? ' · ${v.mensaje}' : ''}',
+              style: const TextStyle(fontSize: 13, color: Color(0xFF1B5E20)),
             ),
+          if (v.estado == EstadoVentaLocal.rechazada)
+            Text('Motivo: ${v.mensaje ?? ''}',
+                style: const TextStyle(fontSize: 13, color: Color(0xFFC0392B))),
+          // NUEVO (CU08): detalle del conflicto.
+          if (enConflicto) ...[
+            if (v.mensaje != null)
+              Text(v.mensaje!, style: const TextStyle(fontSize: 13, color: Color(0xFF8A6D00))),
+            for (final c in v.conflictos)
+              Text(
+                c['tipo'] == 'PRECIO'
+                    ? '${c['prenda']}: cobrado Bs ${c['precio_offline']}, precio actual Bs ${c['precio_servidor']} '
+                        '(diferencia Bs ${c['diferencia']})'
+                    : '${c['prenda']}: se vendieron ${c['cantidad']}, en el servidor quedaban ${c['stock_disponible']}',
+                style: const TextStyle(fontSize: 12, color: Color(0xFF8A6D00)),
+              ),
+            const Text('Lo revisa el encargado o el administrador.',
+                style: TextStyle(fontSize: 12, color: AppColors.grey, fontStyle: FontStyle.italic)),
+          ],
           if (v.estado == EstadoVentaLocal.rechazada)
             Align(
               alignment: Alignment.centerRight,
@@ -687,6 +1060,8 @@ class _PosCartScreenState extends State<PosCartScreen> {
   Widget _comprobanteEnLinea() {
     final venta = _ventaConfirmada!;
     final items = (venta['items'] ?? []) as List<dynamic>;
+    final pagadoReservas = double.tryParse('${venta['pagado_reservas'] ?? ''}') ?? 0;
+    final cliente = venta['cliente'] as Map?;
     return Scaffold(
       appBar: AppBar(title: const Text('Punto de Venta')),
       body: ListView(
@@ -696,15 +1071,25 @@ class _PosCartScreenState extends State<PosCartScreen> {
           const SizedBox(height: 12),
           Text('Venta #${venta['id_venta']} - ${venta['sucursal']}', style: const TextStyle(fontWeight: FontWeight.w600)),
           Text('Cajero: ${venta['usuario']}'),
+          if (cliente != null) Text('Cliente: ${cliente['nombre']} (${cliente['correo']})'),
           Text('Método de pago: ${venta['metodo_pago']}'),
           const SizedBox(height: 12),
           ...items.map((item) => ListTile(
                 title: Text(item['variante'].toString()),
-                subtitle: Text('x${item['cantidad']} - Bs ${item['precio_unitario']}'),
+                subtitle: Text(
+                  'x${item['cantidad']} - Bs ${item['precio_unitario']}'
+                  '${item['reservado'] == true ? ' · reserva' : ''}',
+                ),
                 trailing: Text('Bs ${item['subtotal']}', style: const TextStyle(fontWeight: FontWeight.w600)),
               )),
           const Divider(),
-          Text('Total: Bs ${venta['total']}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          if (pagadoReservas > 0)
+            Text('Pagado al reservar: - Bs ${pagadoReservas.toStringAsFixed(2)}',
+                style: const TextStyle(color: AppColors.success)),
+          Text(
+            '${pagadoReservas > 0 ? 'Total cobrado' : 'Total'}: Bs ${venta['total']}',
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: _nuevaVenta,
@@ -745,6 +1130,7 @@ class _PosCartScreenState extends State<PosCartScreen> {
                 const SizedBox(height: 8),
                 Text('${venta.sucursal} - ${_fmt.format(venta.fechaOperacion.toLocal())}'),
                 Text('Método de pago: ${venta.metodoPago}'),
+                if (venta.correoCliente != null) Text('Cliente: ${venta.correoCliente}'),
                 Text('Código: ${venta.uuid}',
                     style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: Color(0xFF777777))),
                 const SizedBox(height: 8),

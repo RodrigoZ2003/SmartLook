@@ -2,6 +2,8 @@
 //
 // MODIFICADO (SaaS - A.2): al restaurar la sesión, la pantalla inicial sale
 // de User.rutaInicio (misma regla que el login).
+// MODIFICADO: el splash muestra la imagen del logotipo de SmartLook
+// (logotipo-smartlook.jpeg) en lugar del ícono de bolsa y el título.
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -74,32 +76,33 @@ class _SplashScreenState extends State<SplashScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.shopping_bag,
-              size: 80,
-              color: Colors.white,
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'SmartLook',
-              style: GoogleFonts.inter(
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // MODIFICADO: imagen del logotipo (cuadrada, fondo blanco) con bordes redondeados.
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 100),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: Image.asset(
+                    'assets/images/logotipo-smartlook.jpeg',
+                    width: double.infinity,
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Moda Masculina Premium',
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: Colors.white70,
+              const SizedBox(height: 20),
+              Text(
+                'Prueba prendas con realidad aumentada y reserva en la sucursal más cercana, todo desde una cuenta.',
+                style: GoogleFonts.inter(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
