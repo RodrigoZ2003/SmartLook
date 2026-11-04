@@ -22,22 +22,22 @@ MAX_REPORTES_LISTADO = 50
 # NUEVO (SaaS - paso 5): el asistente de gestión y sus reportes solo están
 # disponibles en planes que incluyen reportes con IA (PRO y ULTRA).
 PERMISOS_ASISTENTE = [IsEncargadoSucursal, requiere_funcion("reportes_ia")]
-
+# MODIFICADO (Fase 3 - CU13): ver y exportar un reporte guardado del propio
+# usuario está en los tres planes, porque los reportes convencionales (sin
+# IA, views_reportes.py) también se guardan aquí y se exportan igual.
+PERMISOS_REPORTE = [IsEncargadoSucursal]
 
 def _fecha_texto(momento):
     """Fecha y hora de Bolivia como dd/mm/aaaa hh:mm."""
     return timezone.localtime(momento).strftime("%d/%m/%Y %H:%M")
 
-
 def _resultado_sin_respuesta(reporte):
     """Resultado guardado sin el texto de la respuesta, que se entrega aparte."""
     return {k: v for k, v in (reporte.resultado or {}).items() if k != "respuesta"}
 
-
 def _reporte_del_usuario(request, id_reporte):
     """Reporte del usuario autenticado, o 404 si no existe o es de otra persona."""
     return get_object_or_404(ReporteAsistente, pk=id_reporte, id_usuario=request.user)
-
 
 class AsistenteGestionView(APIView):
     """CU20 - El personal pregunta y recibe la respuesta con sus resultados."""
@@ -75,7 +75,6 @@ class AsistenteGestionView(APIView):
             )
         return Response(resultado)
 
-
 class ReportesGestionView(APIView):
     """Reportes guardados del usuario, del más reciente al más antiguo."""
 
@@ -99,11 +98,10 @@ class ReportesGestionView(APIView):
             ]
         )
 
-
 class ReporteDetalleView(APIView):
     """Un reporte guardado, completo, para volver a mostrarlo en pantalla."""
 
-    permission_classes = PERMISOS_ASISTENTE
+    permission_classes = PERMISOS_REPORTE
 
     def get(self, request, id_reporte):
         """Devuelve un reporte guardado del usuario."""
@@ -119,11 +117,10 @@ class ReporteDetalleView(APIView):
             }
         )
 
-
 class ReporteExportarView(APIView):
     """Descarga un reporte guardado en PDF, Excel (xlsx) o HTML."""
 
-    permission_classes = PERMISOS_ASISTENTE
+    permission_classes = PERMISOS_REPORTE
 
     def get(self, request, id_reporte):
         """Exporta un reporte guardado en el formato pedido."""

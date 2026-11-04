@@ -1,6 +1,8 @@
 // web/src/app/modules/assistant-admin/pages/assistant-admin-home/assistant-admin-home.component.scss
 // NUEVO (CU20): estilos de la pantalla del asistente de gestión.
 // Paleta de la web de SmartLook (styles.scss): $primary #1a1a2e, $accent #0f3460.
+// MODIFICADO (Fase 3 - CU13): min-width: 0 en las columnas del grid para que
+// el gráfico de Chart.js no las agrande sin fin (congelaba la página).
 
 $primary: #1a1a2e;
 $accent: #0f3460;
@@ -213,6 +215,8 @@ $line: #e2e5ec;
   gap: 1rem;
   overflow-y: auto;
   padding-right: 0.25rem;
+  min-width: 0;
+  scrollbar-gutter: stable;
 }
 
 .result-header {

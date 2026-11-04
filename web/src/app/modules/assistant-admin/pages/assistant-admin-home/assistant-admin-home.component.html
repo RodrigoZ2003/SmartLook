@@ -1,5 +1,6 @@
 <!-- web/src/app/modules/assistant-admin/pages/assistant-admin-home/assistant-admin-home.component.html -->
 <!-- NUEVO (CU20): pantalla del asistente de gestión. -->
+<!-- MODIFICADO (Fase 3 - CU13): gráfico del resultado y descarga desde el chat. -->
 <div class="admin-assistant">
 
   <section class="chat-col">
@@ -7,13 +8,13 @@
       <div class="chat-avatar">SL</div>
       <div>
         <h2>Asistente de gestión</h2>
-        <p>Pregunta por inventario, ventas, envíos, reservas o el vestidor virtual.</p>
+        <p>Pide reportes de ventas, inventario, reservas, devoluciones, cambios, entregas o precios. Para descargar, dime «descárgalo en PDF, Excel o HTML».</p>
       </div>
     </header>
 
     <div class="chat-messages" #lista>
       <div class="msg msg-bot" *ngIf="mensajes.length === 0">
-        Hola, puedo ayudarte a consultar el negocio. Escribe o usa el micrófono para preguntar.
+        Hola, puedo armarte reportes del negocio con tabla y gráfico. Escribe o usa el micrófono para preguntar.
       </div>
 
       <div class="msg"
@@ -83,6 +84,8 @@
           <strong>{{ k.tipo === 'dinero' ? ('Bs ' + (k.valor | number:'1.2-2')) : k.valor }}</strong>
         </div>
       </div>
+
+      <app-grafico-reporte [grafico]="reporteActivo.resultado.grafico"></app-grafico-reporte>
 
       <div class="table-wrap" *ngIf="reporteActivo.resultado.filas.length > 0; else sinFilas">
         <table>

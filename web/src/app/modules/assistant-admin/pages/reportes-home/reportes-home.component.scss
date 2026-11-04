@@ -1,0 +1,145 @@
+// web/src/app/modules/assistant-admin/pages/reportes-home/reportes-home.component.scss
+// NUEVO (Fase 3 - CU13): estilos del formulario de reportes convencionales.
+// El resultado (indicadores, tabla, notas y descargas) reutiliza los estilos
+// del asistente de gestión (assistant-admin-home.component.scss).
+// min-width: 0 en las columnas del grid: sin esto el gráfico de Chart.js las
+// agranda sin fin y la página se congela.
+
+$primary: #1a1a2e;
+$accent: #0f3460;
+$white: #ffffff;
+$line: #e2e5ec;
+$error-text: #b3261e;
+
+.reportes {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 1.25rem;
+  height: calc(100vh - 110px);
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.form-col {
+  min-width: 0;
+  background: $white;
+  border: 1px solid $line;
+  border-radius: 16px;
+  padding: 1.1rem 1.2rem;
+  overflow-y: auto;
+}
+
+.result-col {
+  min-width: 0;
+  scrollbar-gutter: stable;
+}
+
+.form-header {
+  margin-bottom: 1rem;
+
+  h2 {
+    margin: 0;
+    color: $primary;
+    font-size: 1.15rem;
+  }
+
+  p {
+    margin: 0.3rem 0 0;
+    font-size: 0.82rem;
+    color: #6b6459;
+  }
+}
+
+.form-reporte {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.fila {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+
+  span {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: $primary;
+  }
+
+  select,
+  input {
+    border: 1px solid $line;
+    border-radius: 8px;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.85rem;
+    background: $white;
+    color: $primary;
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+
+    &:focus {
+      border-color: $accent;
+    }
+
+    &:disabled {
+      background: #f5f5f5;
+      color: #6b6459;
+    }
+  }
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: $primary;
+}
+
+.ayuda {
+  margin: -0.4rem 0 0;
+  font-size: 0.75rem;
+  color: #6b6459;
+}
+
+.error {
+  margin: 0;
+  font-size: 0.82rem;
+  color: $error-text;
+}
+
+.btn-generar {
+  margin-top: 0.3rem;
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  background: $primary;
+  color: $white;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: $accent;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+@media (max-width: 900px) {
+  .reportes {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}

@@ -1,0 +1,209 @@
+<!-- web/src/app/modules/assistant-admin/pages/reportes-home/reportes-home.component.html -->
+<!-- NUEVO (Fase 3 - CU13): reportes convencionales sin IA (los tres planes). -->
+<div class="reportes">
+
+  <section class="form-col">
+    <header class="form-header">
+      <h2>Reportes</h2>
+      <p>Elige el tipo de reporte y sus filtros. Se genera con los datos reales de tu empresa.</p>
+    </header>
+
+    <p class="empty" *ngIf="cargandoOpciones">Cargando tipos de reporte...</p>
+    <p class="error" *ngIf="errorOpciones">{{ errorOpciones }}</p>
+
+    <form *ngIf="opciones" (ngSubmit)="generar()" class="form-reporte">
+      <label class="campo">
+        <span>Tipo de reporte</span>
+        <select name="tipo" [ngModel]="tipoSeleccionado" (ngModelChange)="elegirTipo($event)">
+          <option *ngFor="let t of opciones.tipos" [value]="t.clave">{{ t.nombre }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('empresa') && opciones.empresas.length > 0">
+        <span>Empresa</span>
+        <select name="empresa" [(ngModel)]="filtros.empresa" (ngModelChange)="cambiarEmpresa()">
+          <option [ngValue]="undefined">Todas las empresas</option>
+          <option *ngFor="let e of opciones.empresas" [ngValue]="e">{{ e }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('periodo')">
+        <span>Periodo</span>
+        <select name="periodo" [(ngModel)]="filtros.periodo">
+          <option [ngValue]="undefined">Por defecto</option>
+          <option *ngFor="let p of periodos" [ngValue]="p.valor">{{ p.texto }}</option>
+        </select>
+      </label>
+
+      <div class="fila" *ngIf="usa('desde') || usa('hasta')">
+        <label class="campo" *ngIf="usa('desde')">
+          <span>Desde</span>
+          <input type="date" name="desde" [(ngModel)]="filtros.desde">
+        </label>
+        <label class="campo" *ngIf="usa('hasta')">
+          <span>Hasta</span>
+          <input type="date" name="hasta" [(ngModel)]="filtros.hasta">
+        </label>
+      </div>
+      <p class="ayuda" *ngIf="usa('desde') && usa('periodo')">Si eliges fechas, se usan en lugar del periodo.</p>
+
+      <label class="campo" *ngIf="usa('meses')">
+        <span>Meses a comparar (incluido el actual)</span>
+        <input type="number" name="meses" min="1" max="12" placeholder="3" [(ngModel)]="filtros.meses">
+      </label>
+
+      <label class="campo" *ngIf="usa('sucursal')">
+        <span>Sucursal</span>
+        <select name="sucursal" [(ngModel)]="filtros.sucursal" [disabled]="!!opciones.sucursal_fija">
+          <option [ngValue]="undefined">Todas las sucursales</option>
+          <option *ngFor="let s of sucursales" [ngValue]="s">{{ s }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('categoria')">
+        <span>Categoría</span>
+        <select name="categoria" [(ngModel)]="filtros.categoria">
+          <option [ngValue]="undefined">Todas las categorías</option>
+          <option *ngFor="let c of categorias" [ngValue]="c">{{ c }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('producto')">
+        <span>Prenda</span>
+        <input type="text" name="producto" list="lista-prendas" placeholder="Todas las prendas" [(ngModel)]="filtros.producto">
+      </label>
+      <label class="campo" *ngIf="usa('texto')">
+        <span>Prenda</span>
+        <input type="text" name="texto" list="lista-prendas" placeholder="Todas las prendas" [(ngModel)]="filtros.texto">
+      </label>
+      <datalist id="lista-prendas">
+        <option *ngFor="let p of productos" [value]="p"></option>
+      </datalist>
+
+      <div class="fila" *ngIf="usa('talla') || usa('color')">
+        <label class="campo" *ngIf="usa('talla')">
+          <span>Talla</span>
+          <input type="text" name="talla" placeholder="Todas" [(ngModel)]="filtros.talla">
+        </label>
+        <label class="campo" *ngIf="usa('color')">
+          <span>Color</span>
+          <input type="text" name="color" placeholder="Todos" [(ngModel)]="filtros.color">
+        </label>
+      </div>
+
+      <label class="campo" *ngIf="usa('agrupar_por')">
+        <span>Agrupar por</span>
+        <select name="agrupar_por" [(ngModel)]="filtros.agrupar_por">
+          <option [ngValue]="undefined">Día (por defecto)</option>
+          <option *ngFor="let a of agrupaciones" [ngValue]="a.valor">{{ a.texto }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('canal')">
+        <span>Canal</span>
+        <select name="canal" [(ngModel)]="filtros.canal">
+          <option [ngValue]="undefined">Punto de venta y web</option>
+          <option *ngFor="let c of canales" [ngValue]="c.valor">{{ c.texto }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('estado') && estados.length > 0">
+        <span>Estado</span>
+        <select name="estado" [(ngModel)]="filtros.estado">
+          <option [ngValue]="undefined">Todos los estados</option>
+          <option *ngFor="let e of estados" [ngValue]="e.valor">{{ e.texto }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('tipo')">
+        <span>Mostrar</span>
+        <select name="tipo_solicitud" [(ngModel)]="filtros.tipo">
+          <option [ngValue]="undefined">Devoluciones y cambios</option>
+          <option *ngFor="let t of tiposSolicitud" [ngValue]="t.valor">{{ t.texto }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('situacion')">
+        <span>Situación</span>
+        <select name="situacion" [(ngModel)]="filtros.situacion">
+          <option [ngValue]="undefined">Todas</option>
+          <option *ngFor="let s of situaciones" [ngValue]="s.valor">{{ s.texto }}</option>
+        </select>
+      </label>
+
+      <label class="campo" *ngIf="usa('limite')">
+        <span>Cantidad de filas (1 a 50)</span>
+        <input type="number" name="limite" min="1" max="50" placeholder="10" [(ngModel)]="filtros.limite">
+      </label>
+
+      <label class="check" *ngIf="usa('solo_bajo_stock')">
+        <input type="checkbox" name="solo_bajo_stock" [(ngModel)]="filtros.solo_bajo_stock">
+        <span>Solo stock bajo o agotado</span>
+      </label>
+
+      <p class="error" *ngIf="error">{{ error }}</p>
+
+      <button type="submit" class="btn-generar" [disabled]="generando || !tipoSeleccionado">
+        {{ generando ? 'Generando...' : 'Generar reporte' }}
+      </button>
+    </form>
+  </section>
+
+  <section class="result-col">
+    <ng-container *ngIf="reporte; else sinReporte">
+      <header class="result-header">
+        <div>
+          <h3>{{ reporte.resultado.titulo }}</h3>
+          <p class="result-subtitle">{{ reporte.resultado.subtitulo }}</p>
+        </div>
+        <div class="download-group">
+          <button type="button" (click)="descargar('pdf')" [disabled]="descargando !== null">
+            {{ descargando === 'pdf' ? 'Generando...' : 'PDF' }}
+          </button>
+          <button type="button" (click)="descargar('xlsx')" [disabled]="descargando !== null">
+            {{ descargando === 'xlsx' ? 'Generando...' : 'Excel' }}
+          </button>
+          <button type="button" (click)="descargar('html')" [disabled]="descargando !== null">
+            {{ descargando === 'html' ? 'Generando...' : 'HTML' }}
+          </button>
+        </div>
+      </header>
+
+      <div class="kpis" *ngIf="reporte.resultado.kpis.length > 0">
+        <div class="kpi" *ngFor="let k of reporte.resultado.kpis">
+          <span>{{ k.etiqueta }}</span>
+          <strong>{{ k.tipo === 'dinero' ? ('Bs ' + (k.valor | number:'1.2-2')) : k.valor }}</strong>
+        </div>
+      </div>
+
+      <app-grafico-reporte [grafico]="reporte.resultado.grafico"></app-grafico-reporte>
+
+      <div class="table-wrap" *ngIf="reporte.resultado.filas.length > 0; else sinFilas">
+        <table>
+          <thead>
+            <tr>
+              <th *ngFor="let c of reporte.resultado.columnas" [class.num]="esNumerica(c.tipo)">{{ c.nombre }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let fila of reporte.resultado.filas">
+              <td *ngFor="let valor of fila; let i = index" [class.num]="esNumerica(reporte!.resultado.columnas[i].tipo)">
+                {{ reporte!.resultado.columnas[i].tipo === 'dinero' ? ('Bs ' + (valor | number:'1.2-2')) : valor }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <ng-template #sinFilas><p class="empty">Sin filas para mostrar.</p></ng-template>
+
+      <div class="nota" *ngFor="let n of reporte.resultado.notas">{{ n }}</div>
+    </ng-container>
+
+    <ng-template #sinReporte>
+      <div class="result-placeholder">
+        <p>Aquí aparecerá el reporte con sus indicadores, gráfico y tabla, listo para descargar en PDF, Excel o HTML.</p>
+      </div>
+    </ng-template>
+  </section>
+
+</div>

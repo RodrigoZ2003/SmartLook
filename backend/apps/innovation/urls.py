@@ -1,3 +1,7 @@
+# backend/apps/innovation/urls.py
+#
+# Incluido en config/urls.py bajo "api/innovation/".
+
 from django.urls import path, include
 
 from rest_framework.routers import DefaultRouter
@@ -10,6 +14,7 @@ from .views_gestion import (
     ReporteExportarView,
     ReportesGestionView,
 )
+from .views_reportes import GenerarReporteView, OpcionesReporteView
 
 router = DefaultRouter()
 
@@ -32,5 +37,8 @@ urlpatterns = [
         ReporteExportarView.as_view(),
         name="asistente-reporte-exportar",
     ),
+    # NUEVO (Fase 3 - CU13): reportes convencionales sin IA (los tres planes).
+    path("reportes/opciones/", OpcionesReporteView.as_view(), name="reportes-opciones"),
+    path("reportes/generar/", GenerarReporteView.as_view(), name="reportes-generar"),
     path("", include(router.urls)),
 ]

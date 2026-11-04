@@ -1,3 +1,5 @@
+<!-- web/src/app/layout/layout.component.html -->
+<!-- MODIFICADO (Fase 3 - CU13): opción "Reportes" (reportes convencionales, los tres planes). -->
 <div class="layout">
   <aside class="sidebar" [class.sidebar--hidden]="!sidebarVisible">
     <div class="sidebar-inner">
@@ -90,6 +92,16 @@
             <path d="M4 9h11a5 5 0 0 1 0 10h-4"/>
           </svg>
           <span>Devoluciones</span>
+        </a>
+        <!-- NUEVO (Fase 3 - CU13): reportes convencionales sin IA (los tres planes). -->
+        <a routerLink="/assistant-admin/reportes" class="nav-link" *ngIf="puedeVerAsistente">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 20V10"/>
+            <path d="M10 20V4"/>
+            <path d="M16 20v-7"/>
+            <path d="M22 20H2"/>
+          </svg>
+          <span>Reportes</span>
         </a>
         <a routerLink="/assistant-admin" class="nav-link" *ngIf="puedeVerAsistente && planIncluyeIA">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

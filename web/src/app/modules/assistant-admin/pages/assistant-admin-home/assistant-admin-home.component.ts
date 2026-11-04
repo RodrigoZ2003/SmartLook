@@ -3,9 +3,13 @@
 // NUEVO (CU20): pantalla del asistente de gestión (SUPER_ADMIN, ADMIN_EMPRESA
 // y ENCARGADO_SUCURSAL). Chat por texto o voz a la izquierda; resultado de la
 // pregunta y descargas a la derecha; historial de reportes abajo.
+// MODIFICADO (Fase 3 - CU13): el resultado muestra su gráfico (Chart.js) y,
+// si en el chat se pide "descárgamelo en PDF / Excel / HTML", el archivo se
+// descarga solo (el backend indica qué reporte y en qué formato).
 import { Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import {
   AssistantAdminService,
+  ExportacionPedida,
   FormatoReporte,
   ReporteDetalle,
   ReporteGenerado,
@@ -61,10 +65,10 @@ export class AssistantAdminHomeComponent implements OnInit, OnDestroy {
 
   readonly maxCaracteres = 500;
   readonly sugerencias = [
-    '¿Cuánto stock queda en total?',
-    '¿Cuántos envíos hay hoy?',
-    'Ventas de este mes',
-    'Prendas más vendidas'
+    'Ventas de este mes por sucursal',
+    'Compará las sucursales de los últimos tres meses',
+    'Gráfico de ventas por semana de este año',
+    'Productos con menor existencia'
   ];
 
   private reconocimiento: SpeechRecognitionInstancia | null = null;
@@ -103,6 +107,10 @@ export class AssistantAdminHomeComponent implements OnInit, OnDestroy {
         if (respuesta.resultados.length > 0) {
           this.reporteActivo = respuesta.resultados[0];
           this.cargarReportes();
+        }
+        // NUEVO (CU13): descarga pedida en el chat.
+        if (respuesta.exportar) {
+          this.exportarPedido(respuesta.exportar);
         }
         this.enviando = false;
         this.irAlFinal();
@@ -147,31 +155,40 @@ export class AssistantAdminHomeComponent implements OnInit, OnDestroy {
 
   descargar(formato: FormatoReporte): void {
     const reporte = this.reporteActivo;
-    if (!reporte || this.descargando) {
+    if (!reporte) {
+      return;
+    }
+    this.descargarReporte(reporte.id_reporte, formato);
+  }
+
+  // NUEVO (CU13): muestra el reporte pedido en el chat (si no es el que está
+  // en pantalla) y lo descarga en el formato indicado.
+  private exportarPedido(pedido: ExportacionPedida): void {
+    if (this.reporteActivo?.id_reporte !== pedido.id_reporte) {
+      this.assistantAdminService.obtenerReporte(pedido.id_reporte).subscribe({
+        next: (detalle) => (this.reporteActivo = detalle),
+        error: () => undefined
+      });
+    }
+    this.descargarReporte(pedido.id_reporte, pedido.formato);
+  }
+
+  private descargarReporte(idReporte: number, formato: FormatoReporte): void {
+    if (this.descargando) {
       return;
     }
     this.descargando = formato;
-    this.assistantAdminService.descargarReporte(reporte.id_reporte, formato).subscribe({
+    this.assistantAdminService.descargarReporte(idReporte, formato).subscribe({
       next: (respuesta) => {
-        this.guardarArchivo(respuesta.body, respuesta.headers.get('Content-Disposition'), formato);
+        this.assistantAdminService.guardarArchivo(respuesta, formato);
         this.descargando = null;
       },
-      error: () => (this.descargando = null)
+      error: () => {
+        this.mensajes.push(this.crearMensaje(false, 'No pude descargar el archivo. Intenta de nuevo.', true));
+        this.descargando = null;
+        this.irAlFinal();
+      }
     });
-  }
-
-  private guardarArchivo(contenido: Blob | null, disposicion: string | null, formato: FormatoReporte): void {
-    if (!contenido) {
-      return;
-    }
-    const coincidencia = disposicion?.match(/filename="?([^"]+)"?/);
-    const nombre = coincidencia?.[1] ?? `reporte.${formato}`;
-    const url = URL.createObjectURL(contenido);
-    const enlace = document.createElement('a');
-    enlace.href = url;
-    enlace.download = nombre;
-    enlace.click();
-    URL.revokeObjectURL(url);
   }
 
   private cargarReportes(): void {
