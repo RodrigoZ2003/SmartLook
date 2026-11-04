@@ -1,4 +1,5 @@
 # backend/apps/users_auth/models.py
+# MODIFICADO (Fase 2 - CU16): modelo Notificacion (centro de notificaciones).
 import uuid
 from datetime import timedelta
 
@@ -413,3 +414,62 @@ class PagoSuscripcion(models.Model):
     def __str__(self):
         """Representación legible del pago."""
         return f"Pago {self.id_pago} - {self.id_empresa} - {self.id_plan} ({self.estado})"
+
+
+# NUEVO (Fase 2 - CU16): centro de notificaciones (campana con lista, sin push).
+class Notificacion(models.Model):
+    """Aviso para un usuario: reservas, pedidos, delivery, devoluciones, cambios y conflictos.
+
+    Clientes: avisos de sus reservas, pedidos, devoluciones y cambios.
+    Personal: solo SUPER_ADMIN (todas las empresas) y ADMIN_EMPRESA (la suya).
+    "clave" evita repetir el mismo aviso (por ejemplo, el recordatorio de una reserva).
+    """
+
+    TIPOS = [
+        ("RESERVA", "Reserva"),
+        ("PEDIDO", "Pedido"),
+        ("DELIVERY", "Delivery"),
+        ("DEVOLUCION", "Devolución"),
+        ("CAMBIO", "Cambio de prenda"),
+        ("CONFLICTO", "Venta en conflicto"),
+    ]
+    id_notificacion = models.AutoField(primary_key=True)
+    id_usuario = models.ForeignKey(
+        Usuario, on_delete=models.CASCADE, db_column="id_usuario", related_name="notificaciones"
+    )
+    id_empresa = models.ForeignKey(
+        Empresa,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        db_column="id_empresa",
+        related_name="notificaciones",
+    )
+    tipo = models.CharField(max_length=20, choices=TIPOS)
+    titulo = models.CharField(max_length=150)
+    mensaje = models.CharField(max_length=500)
+    # Ruta de la web a la que lleva el aviso (ej. "/reservations").
+    enlace = models.CharField(max_length=200, null=True, blank=True)
+    clave = models.CharField(max_length=120, null=True, blank=True)
+    leida = models.BooleanField(default=False)
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_lectura = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "notificacion"
+        verbose_name = "Notificación"
+        verbose_name_plural = "Notificaciones"
+        indexes = [
+            models.Index(fields=["id_usuario", "leida"], name="notif_usuario_leida_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["id_usuario", "clave"],
+                condition=models.Q(clave__isnull=False),
+                name="notif_usuario_clave_uniq",
+            ),
+        ]
+
+    def __str__(self):
+        """Representación legible de la notificación."""
+        return f"Notificación {self.id_notificacion} - {self.id_usuario} - {self.titulo}"

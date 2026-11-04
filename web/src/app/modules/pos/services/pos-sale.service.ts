@@ -2,12 +2,22 @@
 //
 // MODIFICADO (Fase 2 - CU08): cliente opcional en la venta en línea e
 // historial / resolución de las operaciones hechas sin conexión.
+// MODIFICADO (Fase 2 - reservas con anticipo): las prendas de una reserva
+// confirmada se cobran con "id_reserva_item" (solo el saldo) y se listan las
+// reservas confirmadas de la sucursal para retirarlas en caja.
 
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiService } from '../../../core/services/api.service';
 
 export type AccionConflicto = 'CONFIRMAR' | 'DEVOLVER';
+
+// Línea de la venta: prenda normal (id_variante) o prenda de una reserva (id_reserva_item).
+export interface ItemPayload {
+  id_variante?: number;
+  id_reserva_item?: number;
+  cantidad: number;
+}
 
 @Injectable({
   providedIn: 'root'
@@ -18,7 +28,7 @@ export class PosSaleService {
   registrarVenta(
     idSucursal: number,
     metodoPago: string,
-    items: { id_variante: number; cantidad: number }[],
+    items: ItemPayload[],
     correoCliente: string | null = null
   ): Observable<any> {
     return this.apiService.post('/sales/ventas-pos/registrar/', {
@@ -26,6 +36,14 @@ export class PosSaleService {
       metodo_pago: metodoPago,
       items,
       correo_cliente: correoCliente || undefined,
+    });
+  }
+
+  // NUEVO (Fase 2): reservas pagadas (confirmadas) de la sucursal, listas para retirar.
+  // Al listar, el backend también vence las reservas cuyo plazo pasó.
+  reservasPorRetirar(idSucursal: number): Observable<any> {
+    return this.apiService.get('/reservations/reservas/', {
+      estado: 'CONFIRMADA', sucursal: idSucursal, page_size: 100
     });
   }
 

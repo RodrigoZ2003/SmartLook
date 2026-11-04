@@ -58,7 +58,11 @@
         </tr>
       </tbody>
     </table>
-    <p class="receipt-total">Total: Bs {{ ventaConfirmada.total }}</p>
+    <!-- NUEVO (Fase 2): lo pagado al reservar no se vuelve a cobrar -->
+    <p class="receipt-pagado" *ngIf="tienePagado(ventaConfirmada)">
+      Pagado al reservar: - Bs {{ ventaConfirmada.pagado_reservas | number:'1.2-2' }}
+    </p>
+    <p class="receipt-total">Total cobrado: Bs {{ ventaConfirmada.total }}</p>
     <button type="button" class="btn btn-accent" (click)="nuevaVenta()">Nueva venta</button>
   </div>
   <!-- NUEVO (A.5): comprobante provisional de una venta guardada sin conexión -->
@@ -119,8 +123,22 @@
     </div>
     <div class="sale-panel">
       <h3>Venta actual</h3>
-      <div *ngIf="items.length === 0" class="empty-state">
+      <div *ngIf="!hayLineas" class="empty-state">
         Sin prendas agregadas.
+      </div>
+      <!-- NUEVO (Fase 2): reservas que se retiran (se cobra solo el saldo) -->
+      <div class="reserva-linea" *ngFor="let r of reservasEnVenta">
+        <div class="reserva-linea__head">
+          <strong>Reserva #{{ r.id_reserva }}</strong>
+          <span class="reserva-linea__cliente">{{ r.cliente }}</span>
+          <button type="button" class="btn-link btn-danger" (click)="quitarReserva(r)">Quitar</button>
+        </div>
+        <span class="reserva-linea__prenda" *ngFor="let p of r.prendas">{{ p.variante }} · Bs {{ p.precio | number:'1.2-2' }}</span>
+        <div class="reserva-linea__montos">
+          <span>Total Bs {{ r.monto_total | number:'1.2-2' }}</span>
+          <span>Pagado al reservar Bs {{ r.pagado | number:'1.2-2' }}</span>
+          <strong>Saldo Bs {{ r.saldo | number:'1.2-2' }}</strong>
+        </div>
       </div>
       <div class="cart-item" *ngFor="let item of items">
         <span class="item-name">{{ item.nombre }}</span>
@@ -134,14 +152,35 @@
       </div>
       <div class="sale-total">
         <span>Total</span>
-        <span class="total-value">Bs {{ total }}</span>
+        <span class="total-value">Bs {{ total | number:'1.2-2' }}</span>
       </div>
       <div class="form-group">
         <label for="sucursal">Sucursal</label>
-        <select id="sucursal" [(ngModel)]="sucursalSeleccionada">
+        <select id="sucursal" [(ngModel)]="sucursalSeleccionada" (ngModelChange)="onCambioSucursal()">
           <option [ngValue]="null">-- Selecciona --</option>
           <option *ngFor="let s of sucursales" [ngValue]="s.id_sucursal">{{ s.nombre }}</option>
         </select>
+      </div>
+      <!-- NUEVO (Fase 2): retiro de reservas pagadas de esta sucursal -->
+      <div class="reservas-box">
+        <button type="button" class="btn btn-secondary" [disabled]="!enLinea || !sucursalSeleccionada || cargandoReservas"
+                (click)="cargarReservas()">
+          {{ cargandoReservas ? 'Cargando...' : 'Retirar una reserva' }}
+        </button>
+        <small class="ayuda-neutra" *ngIf="!enLinea">El retiro de reservas necesita conexión.</small>
+        <ng-container *ngIf="mostrarReservas && !cargandoReservas">
+          <p class="reservas-vacio" *ngIf="reservasDisponibles.length === 0">No hay reservas pagadas por retirar en esta sucursal.</p>
+          <div class="reserva-opcion" *ngFor="let r of reservasDisponibles">
+            <div class="reserva-opcion__info">
+              <strong>Reserva #{{ r.id_reserva }} · {{ r.cliente }}</strong>
+              <span>{{ r.items.length }} prenda(s) · para el {{ r.fecha_reserva | date:'dd/MM/yyyy' }} {{ r.hora_reserva | slice:0:5 }}</span>
+              <span>Pagado Bs {{ r.monto_pagado | number:'1.2-2' }} · Saldo Bs {{ r.saldo | number:'1.2-2' }}</span>
+            </div>
+            <button type="button" class="btn btn-accent" [disabled]="yaEnVenta(r)" (click)="agregarReserva(r)">
+              {{ yaEnVenta(r) ? 'Agregada' : 'Agregar' }}
+            </button>
+          </div>
+        </ng-container>
       </div>
       <!-- NUEVO (CU08): cliente opcional -->
       <div class="form-group">

@@ -17,28 +17,45 @@
 // línea y sin conexión; la cola local muestra "En conflicto" con el detalle
 // (precio distinto o sin stock) y el encargado/administrador tiene un acceso
 // a "Operaciones sin conexión" con los conflictos pendientes.
+// MODIFICADO (Fase 2 - reservas con anticipo): retiro de reservas en caja. Se
+// cargan las reservas confirmadas (pagadas) de la sucursal; al agregar una, entran
+// todas sus prendas (la reserva se retira completa) y se cobra solo el saldo.
+// Necesita conexión.
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Subscription } from 'rxjs';
 import * as QRCode from 'qrcode';
 import { AuthService } from '../../../../core/auth/auth.service';
 import { InventoryService } from '../../../inventory/services/inventory.service';
-import { PosSaleService } from '../../services/pos-sale.service';
+import { ItemPayload, PosSaleService } from '../../services/pos-sale.service';
 import {
   PosOfflineService,
   ResultadoSync,
   VentaLocal
 } from '../../services/pos-offline.service';
+
 interface ItemVenta {
   id_variante: number;
   nombre: string;
   precio: number;
   cantidad: number;
 }
+
+// NUEVO (Fase 2): reserva pagada que se retira en esta venta.
+interface ReservaEnVenta {
+  id_reserva: number;
+  cliente: string;
+  prendas: { id_item: number; variante: string; precio: number }[];
+  monto_total: number;
+  pagado: number;
+  saldo: number;
+}
+
 // El catálogo local se renueva solo si tiene más de 30 minutos.
 const VIGENCIA_CATALOGO_MS = 30 * 60 * 1000;
 // Roles que revisan y resuelven las operaciones en conflicto (CU08).
 const ROLES_GESTION_CONFLICTOS = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
 const PATRON_CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 @Component({
   selector: 'app-pos-cart',
   templateUrl: './pos-cart.component.html',
@@ -74,7 +91,13 @@ export class PosCartComponent implements OnInit, OnDestroy {
   // NUEVO (CU08): acceso a los conflictos para encargado/administrador.
   esGestor = false;
   conflictosPendientes = 0;
+  // NUEVO (Fase 2): reservas confirmadas de la sucursal y las que entran en la venta.
+  reservasDisponibles: any[] = [];
+  reservasEnVenta: ReservaEnVenta[] = [];
+  cargandoReservas = false;
+  mostrarReservas = false;
   private suscripciones = new Subscription();
+
   constructor(
     private inventoryService: InventoryService,
     private posSaleService: PosSaleService,
@@ -84,6 +107,7 @@ export class PosCartComponent implements OnInit, OnDestroy {
     const roles = this.authService.obtenerRoles();
     this.esGestor = roles.some(rol => ROLES_GESTION_CONFLICTOS.includes(rol));
   }
+
   ngOnInit(): void {
     this.suscripciones.add(this.offline.enLinea$.subscribe(enLinea => {
       const recuperada = enLinea && !this.enLinea;
@@ -112,25 +136,32 @@ export class PosCartComponent implements OnInit, OnDestroy {
     // Si quedaron ventas pendientes de otra vez, se intentan enviar al entrar.
     this.offline.sincronizar();
   }
+
   ngOnDestroy(): void {
     this.suscripciones.unsubscribe();
   }
+
   get pendientes(): number {
     return this.ventasLocales.filter(v => v.estado === 'REGISTRADA' || v.estado === 'ENVIADA').length;
   }
+
   get confirmadas(): number {
     return this.ventasLocales.filter(v => v.estado === 'CONFIRMADA').length;
   }
+
   get rechazadas(): number {
     return this.ventasLocales.filter(v => v.estado === 'RECHAZADA').length;
   }
+
   get enConflicto(): number {
     return this.ventasLocales.filter(v => v.estado === 'EN_CONFLICTO').length;
   }
+
   // Ventas que el servidor ya registró (se pueden quitar del dispositivo).
   get registradasEnServidor(): number {
     return this.confirmadas + this.enConflicto;
   }
+
   // Cantidad de conflictos sin resolver de la empresa (solo encargado/administrador).
   cargarConflictosPendientes(): void {
     if (!this.esGestor || !this.enLinea) {
@@ -141,6 +172,7 @@ export class PosCartComponent implements OnInit, OnDestroy {
       error: () => undefined
     });
   }
+
   cargarSucursales(): void {
     if (!this.enLinea) {
       this.cargarSucursalesLocales();
@@ -159,9 +191,11 @@ export class PosCartComponent implements OnInit, OnDestroy {
       }
     });
   }
+
   private async cargarSucursalesLocales(): Promise<void> {
     this.sucursales = await this.offline.sucursalesLocales();
   }
+
   // Usa la copia local; si no hay o es antigua y hay conexión, la renueva.
   private async prepararCatalogoLocal(): Promise<void> {
     const local = await this.offline.catalogoLocal();
@@ -171,6 +205,7 @@ export class PosCartComponent implements OnInit, OnDestroy {
       this.actualizarCatalogo();
     }
   }
+
   async actualizarCatalogo(): Promise<void> {
     if (!this.enLinea || this.actualizandoCatalogo) {
       return;
@@ -186,10 +221,12 @@ export class PosCartComponent implements OnInit, OnDestroy {
       this.actualizandoCatalogo = false;
     }
   }
+
   private mostrarInfoCatalogo(entrada: { fecha: string; datos: any[] } | null): void {
     this.fechaCatalogo = entrada?.fecha || null;
     this.totalCatalogo = entrada?.datos?.length || 0;
   }
+
   buscar(): void {
     if (!this.terminoBusqueda.trim()) {
       this.resultados = [];
@@ -217,10 +254,12 @@ export class PosCartComponent implements OnInit, OnDestroy {
       }
     });
   }
+
   private async buscarEnCatalogoLocal(): Promise<void> {
     this.busquedaLocal = true;
     this.resultados = await this.offline.buscarLocal(this.terminoBusqueda);
   }
+
   agregarItem(variante: any): void {
     const existente = this.items.find(i => i.id_variante === variante.id_variante);
     if (existente) {
@@ -235,10 +274,12 @@ export class PosCartComponent implements OnInit, OnDestroy {
     }
     this.actualizarQrSiCorresponde();
   }
+
   incrementar(item: ItemVenta): void {
     item.cantidad += 1;
     this.actualizarQrSiCorresponde();
   }
+
   decrementar(item: ItemVenta): void {
     if (item.cantidad <= 1) {
       this.quitar(item);
@@ -247,13 +288,97 @@ export class PosCartComponent implements OnInit, OnDestroy {
     item.cantidad -= 1;
     this.actualizarQrSiCorresponde();
   }
+
   quitar(item: ItemVenta): void {
     this.items = this.items.filter(i => i !== item);
     this.actualizarQrSiCorresponde();
   }
+
+  // MODIFICADO (Fase 2): prendas normales + saldo de las reservas que se retiran.
   get total(): number {
-    return this.items.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
+    const prendas = this.items.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
+    return prendas + this.reservasEnVenta.reduce((acc, r) => acc + r.saldo, 0);
   }
+
+  get hayLineas(): boolean {
+    return this.items.length > 0 || this.reservasEnVenta.length > 0;
+  }
+
+  // ---------------------------------------------------------------- reservas (Fase 2)
+  // Al cambiar de sucursal se quitan las reservas: cada una se retira en su sucursal.
+  onCambioSucursal(): void {
+    this.reservasEnVenta = [];
+    this.reservasDisponibles = [];
+    this.mostrarReservas = false;
+    this.actualizarQrSiCorresponde();
+  }
+
+  cargarReservas(): void {
+    this.error = null;
+    if (!this.sucursalSeleccionada) {
+      this.error = 'Selecciona primero la sucursal para ver sus reservas.';
+      return;
+    }
+    if (!this.enLinea) {
+      this.error = 'El retiro de reservas necesita conexión.';
+      return;
+    }
+    this.cargandoReservas = true;
+    this.mostrarReservas = true;
+    this.posSaleService.reservasPorRetirar(this.sucursalSeleccionada).subscribe({
+      next: (data: any) => {
+        this.reservasDisponibles = data.results || data;
+        this.cargandoReservas = false;
+      },
+      error: (err) => {
+        this.cargandoReservas = false;
+        this.reservasDisponibles = [];
+        this.error = err?.error?.error || 'No se pudieron cargar las reservas.';
+      }
+    });
+  }
+
+  yaEnVenta(reserva: any): boolean {
+    return this.reservasEnVenta.some(r => r.id_reserva === reserva.id_reserva);
+  }
+
+  // La reserva entra completa: todas sus prendas pendientes y se cobra su saldo.
+  agregarReserva(reserva: any): void {
+    if (this.yaEnVenta(reserva)) {
+      return;
+    }
+    const prendas = (reserva.items || [])
+      .filter((i: any) => i.estado === 'PENDIENTE')
+      .map((i: any) => ({ id_item: i.id_item, variante: i.variante, precio: Number(i.precio_unitario) || 0 }));
+    if (prendas.length === 0) {
+      this.error = `La Reserva #${reserva.id_reserva} no tiene prendas por retirar.`;
+      return;
+    }
+    const total = reserva.monto_total !== null && reserva.monto_total !== undefined
+      ? Number(reserva.monto_total)
+      : prendas.reduce((s: number, p: { precio: number }) => s + p.precio, 0);
+    const pagado = Number(reserva.monto_pagado) || 0;
+    this.reservasEnVenta.push({
+      id_reserva: reserva.id_reserva,
+      cliente: reserva.cliente,
+      prendas,
+      monto_total: total,
+      pagado,
+      saldo: Math.max(total - pagado, 0)
+    });
+    this.actualizarQrSiCorresponde();
+  }
+
+  // Comprobante: la venta incluye reservas con algo ya pagado.
+  tienePagado(venta: any): boolean {
+    return Number(venta?.pagado_reservas) > 0;
+  }
+
+  quitarReserva(reserva: ReservaEnVenta): void {
+    this.reservasEnVenta = this.reservasEnVenta.filter(r => r !== reserva);
+    this.actualizarQrSiCorresponde();
+  }
+
   onMetodoPagoChange(): void {
     if (this.metodoPago === 'QR') {
       this.generarQr();
@@ -261,11 +386,13 @@ export class PosCartComponent implements OnInit, OnDestroy {
       this.qrDataUrl = null;
     }
   }
+
   private actualizarQrSiCorresponde(): void {
     if (this.metodoPago === 'QR') {
       this.generarQr();
     }
   }
+
   async generarQr(): Promise<void> {
     const referencia = `SL-${Date.now()}`;
     const contenido = `SmartLook - Pago QR\nTotal: Bs ${this.total.toFixed(2)}\nReferencia: ${referencia}`;
@@ -275,9 +402,10 @@ export class PosCartComponent implements OnInit, OnDestroy {
       this.qrDataUrl = null;
     }
   }
+
   registrarVenta(): void {
-    if (this.items.length === 0) {
-      this.error = 'Agrega al menos una prenda a la venta.';
+    if (!this.hayLineas) {
+      this.error = 'Agrega al menos una prenda o una reserva a la venta.';
       return;
     }
     if (!this.sucursalSeleccionada) {
@@ -295,7 +423,10 @@ export class PosCartComponent implements OnInit, OnDestroy {
       return;
     }
     this.registrando = true;
-    const itemsPayload = this.items.map(i => ({ id_variante: i.id_variante, cantidad: i.cantidad }));
+    const itemsPayload: ItemPayload[] = [
+      ...this.items.map(i => ({ id_variante: i.id_variante, cantidad: i.cantidad })),
+      ...this.reservasEnVenta.flatMap(r => r.prendas.map(p => ({ id_reserva_item: p.id_item, cantidad: 1 })))
+    ];
     this.posSaleService.registrarVenta(
       this.sucursalSeleccionada, this.metodoPago, itemsPayload, this.correoCliente.trim() || null
     ).subscribe({
@@ -315,9 +446,14 @@ export class PosCartComponent implements OnInit, OnDestroy {
       }
     });
   }
+
   private async guardarSinConexion(): Promise<void> {
     if (this.metodoPago !== 'EFECTIVO') {
       this.error = 'Sin conexión solo se pueden registrar ventas al contado en efectivo.';
+      return;
+    }
+    if (this.reservasEnVenta.length > 0) {
+      this.error = 'El retiro de reservas necesita conexión: quita la reserva o espera a recuperar internet.';
       return;
     }
     const sucursal = this.sucursales.find(s => s.id_sucursal === this.sucursalSeleccionada);
@@ -342,17 +478,21 @@ export class PosCartComponent implements OnInit, OnDestroy {
       this.registrando = false;
     }
   }
+
   sincronizarAhora(): void {
     this.offline.sincronizar();
   }
+
   descartar(venta: VentaLocal): void {
     if (confirm('¿Descartar esta venta rechazada? Se borrará de este dispositivo.')) {
       this.offline.descartar(venta);
     }
   }
+
   limpiarConfirmadas(): void {
     this.offline.limpiarConfirmadas();
   }
+
   textoEstado(venta: VentaLocal): string {
     switch (venta.estado) {
       case 'CONFIRMADA':
@@ -367,8 +507,12 @@ export class PosCartComponent implements OnInit, OnDestroy {
         return 'Registrada localmente';
     }
   }
+
   nuevaVenta(): void {
     this.items = [];
+    this.reservasEnVenta = [];
+    this.reservasDisponibles = [];
+    this.mostrarReservas = false;
     this.terminoBusqueda = '';
     this.resultados = [];
     this.sucursalSeleccionada = null;

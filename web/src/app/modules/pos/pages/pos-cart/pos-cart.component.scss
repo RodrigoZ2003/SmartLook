@@ -2,29 +2,35 @@
   padding: 2rem;
   max-width: 1100px;
   margin: 0 auto;
+
   h2 {
     color: #1a1a2e;
     margin-bottom: 1.5rem;
   }
 }
+
 .pos-layout {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
   gap: 1.5rem;
+
   @media (max-width: 900px) {
     grid-template-columns: 1fr;
   }
 }
+
 .search-panel, .sale-panel {
   background: white;
   border-radius: 8px;
   padding: 1.25rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
+
 .search-row {
   display: flex;
   gap: 0.5rem;
   margin: 0.5rem 0 1rem;
+
   input {
     flex: 1;
     padding: 0.6rem;
@@ -32,48 +38,58 @@
     border-radius: 6px;
   }
 }
+
 .results {
   max-height: 400px;
   overflow-y: auto;
 }
+
 .result-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem;
   border-bottom: 1px solid #f0f0f0;
+
   .result-info {
     display: flex;
     flex-direction: column;
+
     .result-name {
       font-weight: 600;
       color: #1a1a2e;
     }
+
     .result-price {
       font-size: 0.85rem;
       color: #999;
     }
   }
 }
+
 .empty-state {
   color: #999;
   padding: 1rem 0;
 }
+
 .cart-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 0;
   border-bottom: 1px solid #f0f0f0;
+
   .item-name {
     flex: 1;
     font-weight: 600;
     color: #1a1a2e;
   }
+
   .item-qty {
     display: flex;
     align-items: center;
     gap: 0.4rem;
+
     button {
       width: 26px;
       height: 26px;
@@ -83,22 +99,26 @@
       cursor: pointer;
     }
   }
+
   .item-subtotal {
     font-weight: 600;
     color: #0f3460;
     min-width: 70px;
     text-align: right;
   }
+
   .btn-link {
     background: none;
     border: none;
     cursor: pointer;
     font-size: 0.8rem;
+
     &.btn-danger {
       color: #f44336;
     }
   }
 }
+
 .sale-total {
   display: flex;
   justify-content: space-between;
@@ -108,14 +128,17 @@
   border-top: 2px solid #e0e0e0;
   margin-top: 0.5rem;
 }
+
 .form-group {
   margin: 0.75rem 0;
+
   label {
     display: block;
     margin-bottom: 0.4rem;
     font-weight: 600;
     color: #1a1a2e;
   }
+
   select,
   input {
     width: 100%;
@@ -124,34 +147,40 @@
     border-radius: 6px;
     box-sizing: border-box;
   }
+
   .opcional {
     font-weight: 400;
     color: #999;
     font-size: 0.8rem;
   }
 }
+
 .ayuda-neutra {
   display: block;
   margin-top: 0.3rem;
   font-size: 0.8rem;
   color: #777;
 }
+
 .qr-block {
   text-align: center;
   margin: 1rem 0;
   padding: 1rem;
   background: #f8f8fa;
   border-radius: 8px;
+
   .qr-hint {
     font-size: 0.85rem;
     color: #666;
     margin-bottom: 0.75rem;
   }
+
   .qr-image {
     width: 180px;
     height: 180px;
     margin-bottom: 0.5rem;
   }
+
   .btn-link {
     background: none;
     border: none;
@@ -161,11 +190,13 @@
     font-size: 0.8rem;
   }
 }
+
 .error-message {
   color: #f44336;
   font-size: 0.9rem;
   margin-bottom: 0.5rem;
 }
+
 .receipt {
   background: white;
   border-radius: 8px;
@@ -173,15 +204,18 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   max-width: 600px;
   margin: 0 auto;
+
   h3 {
     color: #1a1a2e;
     margin-bottom: 0.5rem;
   }
 }
+
 .receipt-table {
   width: 100%;
   margin: 1rem 0;
   border-collapse: collapse;
+
   th, td {
     text-align: left;
     padding: 0.5rem;
@@ -189,6 +223,7 @@
     font-size: 0.9rem;
   }
 }
+
 .receipt-total {
   font-size: 1.2rem;
   font-weight: 700;
@@ -196,6 +231,7 @@
   text-align: right;
   margin-bottom: 1rem;
 }
+
 // NUEVO (A.5): estado de la conexión, comprobante provisional y cola local
 .conexion {
   display: flex;
@@ -207,6 +243,7 @@
   background: #e8f5e9;
   color: #1b5e20;
   font-size: 0.85rem;
+
   .punto {
     width: 10px;
     height: 10px;
@@ -215,15 +252,18 @@
     background: #2e7d32;
     flex-shrink: 0;
   }
+
   .conexion-texto {
     flex: 1;
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
   }
+
   .catalogo-info {
     opacity: 0.85;
   }
+
   .btn-link {
     background: none;
     border: none;
@@ -233,27 +273,33 @@
     font-size: 0.8rem;
     white-space: nowrap;
   }
+
   &.conexion--offline {
     background: #fff3e0;
     color: #8a4b00;
+
     .punto {
       background: #e65100;
     }
   }
 }
+
 .busqueda-local {
   font-size: 0.8rem;
   color: #8a4b00;
   margin: -0.5rem 0 0.75rem;
 }
+
 .ayuda {
   display: block;
   margin-top: 0.3rem;
   font-size: 0.8rem;
   color: #8a4b00;
 }
+
 .receipt--offline {
   border: 2px dashed #e65100;
+
   .pendiente-tag {
     display: inline-block;
     margin-bottom: 0.75rem;
@@ -264,45 +310,53 @@
     font-size: 0.8rem;
     font-weight: 700;
   }
+
   .codigo {
     font-family: monospace;
     font-size: 0.75rem;
     color: #777;
     word-break: break-all;
   }
+
   .nota {
     font-size: 0.85rem;
     color: #666;
     margin-bottom: 1rem;
   }
 }
+
 .cola {
   margin-top: 1.5rem;
   background: white;
   border-radius: 8px;
   padding: 1.25rem;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+
   .cola-head {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+
     h3 {
       color: #1a1a2e;
       margin: 0;
     }
+
     .cola-acciones {
       display: flex;
       gap: 0.5rem;
       flex-wrap: wrap;
     }
   }
+
   .cola-resumen {
     font-size: 0.85rem;
     color: #666;
     margin: 0.5rem 0;
   }
+
   .sync-resultado {
     font-size: 0.85rem;
     padding: 0.6rem 0.8rem;
@@ -310,18 +364,21 @@
     background: #e8f5e9;
     color: #1b5e20;
     margin-bottom: 0.75rem;
+
     &.sync-resultado--error {
       background: #fdecea;
       color: #8e2a20;
     }
   }
 }
+
 .cola-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.7rem 0;
   border-top: 1px solid #f0f0f0;
+
   .cola-info {
     flex: 1;
     display: flex;
@@ -329,19 +386,23 @@
     gap: 0.15rem;
     font-size: 0.85rem;
     color: #555;
+
     strong {
       color: #1a1a2e;
     }
+
     .codigo {
       font-family: monospace;
       font-size: 0.7rem;
       color: #999;
       word-break: break-all;
     }
+
     .motivo {
       color: #c0392b;
     }
   }
+
   .estado {
     padding: 0.15rem 0.6rem;
     border-radius: 999px;
@@ -350,34 +411,41 @@
     font-size: 0.75rem;
     font-weight: 700;
     white-space: nowrap;
+
     &.estado--enviada {
       background: #e3f2fd;
       color: #0d47a1;
     }
+
     &.estado--confirmada {
       background: #e8f5e9;
       color: #1b5e20;
     }
+
     &.estado--rechazada {
       background: #fdecea;
       color: #c0392b;
     }
+
     &.estado--en_conflicto {
       background: #fff8e1;
       color: #8a6d00;
       border: 1px solid #f0c36d;
     }
   }
+
   .btn-link {
     background: none;
     border: none;
     cursor: pointer;
     font-size: 0.8rem;
+
     &.btn-danger {
       color: #f44336;
     }
   }
 }
+
 // NUEVO (CU08): acceso a operaciones sin conexión y conflictos en la cola
 .pos-head {
   display: flex;
@@ -386,15 +454,18 @@
   gap: 0.75rem;
   flex-wrap: wrap;
   margin-bottom: 1.5rem;
+
   h2 {
     margin-bottom: 0;
   }
 }
+
 .pos-accesos {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
 .btn-operaciones {
   display: inline-flex;
   align-items: center;
@@ -407,10 +478,12 @@
   font-size: 0.85rem;
   font-weight: 600;
   background: white;
+
   &:hover {
     background: #f0f4fa;
   }
 }
+
 .badge-conflictos {
   padding: 0.1rem 0.55rem;
   border-radius: 999px;
@@ -418,27 +491,119 @@
   color: #5c4400;
   font-size: 0.75rem;
 }
+
 .cola-item--conflicto {
   background: #fffdf5;
+
   .conflicto-msg {
     color: #8a6d00;
     font-weight: 600;
   }
+
   .conflicto-linea {
     color: #6b5a1e;
   }
+
   .conflicto-nota {
     font-size: 0.75rem;
     color: #999;
   }
 }
+
+// NUEVO (Fase 2): retiro de reservas pagadas en caja
+.receipt-pagado {
+  text-align: right;
+  color: #1b5e20;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.reserva-linea {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  margin: 0.5rem 0;
+  border-radius: 6px;
+  background: #eef7f9;
+  border-left: 4px solid #0c5460;
+  font-size: 0.85rem;
+
+  .reserva-linea__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+
+    strong {
+      color: #0c5460;
+    }
+
+    .reserva-linea__cliente {
+      flex: 1;
+      color: #555;
+    }
+  }
+
+  .reserva-linea__prenda {
+    color: #444;
+  }
+
+  .reserva-linea__montos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    color: #666;
+
+    strong {
+      color: #1a1a2e;
+    }
+  }
+}
+
+.reservas-box {
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem;
+  border: 1px dashed #c0c0c0;
+  border-radius: 6px;
+
+  .reservas-vacio {
+    font-size: 0.85rem;
+    color: #888;
+    margin: 0.5rem 0 0;
+  }
+}
+
+.reserva-opcion {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 0.5rem;
+
+  .reserva-opcion__info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    font-size: 0.85rem;
+    color: #555;
+
+    strong {
+      color: #1a1a2e;
+    }
+  }
+}
+
 @media (max-width: 640px) {
   .pos-container {
     padding: 1rem;
   }
+
   .conexion {
     flex-wrap: wrap;
   }
+
   .cola-item {
     flex-wrap: wrap;
   }

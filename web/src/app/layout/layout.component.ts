@@ -15,9 +15,12 @@
 // mostrando información guardada que puede estar desactualizada) y envío
 // automático de las operaciones sin conexión (ventas del POS y reservas del
 // cliente) en cualquier pantalla, apenas vuelve la conexión.
+// NUEVO (Fase 2 - CU16): campana de notificaciones con contador y lista. La ven
+// el cliente, el SUPER_ADMIN y el ADMIN_EMPRESA (cajero, encargado y repartidor
+// no reciben avisos). El contador se consulta cada minuto (sin push).
 import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
-import { Subscription } from 'rxjs';
+import { Subscription, timer } from 'rxjs';
 import { AuthService, EmpresaSesion } from '../core/auth/auth.service';
 import { PlanService } from '../core/services/plan.service';
 import { AvisoPlan, AvisoPlanService } from '../core/services/aviso-plan.service';
@@ -25,11 +28,15 @@ import { formatoFecha } from '../modules/empresas/services/empresa.service';
 import { ConexionService } from '../core/services/conexion.service';
 import { PosOfflineService } from '../modules/pos/services/pos-offline.service';
 import { ReservaOfflineService } from '../modules/reservations/services/reserva-offline.service';
+import { Notificacion, NotificacionesService } from '../core/services/notificaciones.service';
 const ROLES_PERSONAL = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL', 'CAJERO'];
 const ROLES_ENTREGAS = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL', 'REPARTIDOR'];
 const ROLES_ASISTENTE = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
 const ROLES_DEVOLUCIONES = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
 const ROLES_EMPRESAS = ['SUPER_ADMIN', 'ADMIN_EMPRESA'];
+// NUEVO (CU16): el personal que recibe avisos.
+const ROLES_NOTIFICACIONES = ['SUPER_ADMIN', 'ADMIN_EMPRESA'];
+const INTERVALO_NOTIFICACIONES_MS = 60 * 1000;
 @Component({
   selector: 'app-layout',
   templateUrl: './layout.component.html',
@@ -54,6 +61,12 @@ export class LayoutComponent implements OnDestroy {
   suscripcionVencida = false;
   enLinea = true;
   copiaLocal: string | null = null;
+  // NUEVO (CU16): campana de notificaciones.
+  puedeVerNotificaciones = false;
+  noLeidas = 0;
+  notificaciones: Notificacion[] = [];
+  panelNotificaciones = false;
+  cargandoNotificaciones = false;
   private suscripciones = new Subscription();
   sidebarVisible = true;
   constructor(
@@ -63,7 +76,8 @@ export class LayoutComponent implements OnDestroy {
     private avisoPlanService: AvisoPlanService,
     private conexion: ConexionService,
     private posOffline: PosOfflineService,
-    private reservaOffline: ReservaOfflineService
+    private reservaOffline: ReservaOfflineService,
+    private notificacionesService: NotificacionesService
   ) {
     const data = localStorage.getItem('usuario');
     if (data) {
@@ -82,8 +96,11 @@ export class LayoutComponent implements OnDestroy {
     this.empresa = this.authService.obtenerEmpresa();
     this.sucursal = this.nombreCortoSucursal(this.usuario?.sucursal_nombre);
     this.esAdminEmpresa = roles.includes('ADMIN_EMPRESA');
+    this.puedeVerNotificaciones =
+      this.esCliente || roles.some(rol => ROLES_NOTIFICACIONES.includes(rol));
     this.iniciarPlan();
     this.iniciarConexion();
+    this.iniciarNotificaciones();
   }
   ngOnDestroy(): void {
     this.suscripciones.unsubscribe();
@@ -127,6 +144,67 @@ export class LayoutComponent implements OnDestroy {
     } else {
       this.avisoSuscripcion = null;
     }
+  }
+  // ---------------------------------------------------------------- notificaciones (CU16)
+  // Consulta el contador al entrar y cada minuto mientras haya conexión.
+  private iniciarNotificaciones(): void {
+    if (!this.puedeVerNotificaciones) {
+      return;
+    }
+    this.suscripciones.add(timer(0, INTERVALO_NOTIFICACIONES_MS).subscribe(() => {
+      if (this.enLinea) {
+        this.actualizarContador();
+      }
+    }));
+  }
+  private actualizarContador(): void {
+    this.notificacionesService.contador().subscribe({
+      next: (r) => this.noLeidas = r?.no_leidas || 0,
+      error: () => undefined
+    });
+  }
+  alternarNotificaciones(): void {
+    this.panelNotificaciones = !this.panelNotificaciones;
+    if (this.panelNotificaciones) {
+      this.cargarNotificaciones();
+    }
+  }
+  cerrarNotificaciones(): void {
+    this.panelNotificaciones = false;
+  }
+  private cargarNotificaciones(): void {
+    this.cargandoNotificaciones = true;
+    this.notificacionesService.listar().subscribe({
+      next: (data: any) => {
+        this.notificaciones = data?.results || data || [];
+        this.cargandoNotificaciones = false;
+        this.actualizarContador();
+      },
+      error: () => {
+        this.cargandoNotificaciones = false;
+      }
+    });
+  }
+  // Marca el aviso como leído y lleva a su pantalla.
+  abrirNotificacion(notificacion: Notificacion): void {
+    this.panelNotificaciones = false;
+    if (!notificacion.leida) {
+      notificacion.leida = true;
+      this.noLeidas = Math.max(this.noLeidas - 1, 0);
+      this.notificacionesService.leer(notificacion.id_notificacion).subscribe({ error: () => undefined });
+    }
+    if (notificacion.enlace) {
+      this.router.navigateByUrl(notificacion.enlace);
+    }
+  }
+  marcarTodasLeidas(): void {
+    this.notificacionesService.leerTodas().subscribe({
+      next: () => {
+        this.notificaciones.forEach(n => n.leida = true);
+        this.noLeidas = 0;
+      },
+      error: () => undefined
+    });
   }
   cerrarAviso(): void {
     this.avisoPlanService.cerrar();

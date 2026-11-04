@@ -180,6 +180,40 @@
         <div class="navbar-title">SmartLook</div>
       </div>
       <div class="user">
+        <!-- NUEVO (Fase 2 - CU16): campana de notificaciones -->
+        <div class="campana" *ngIf="puedeVerNotificaciones">
+          <button type="button" class="campana-btn" (click)="alternarNotificaciones()"
+                  [attr.aria-label]="'Notificaciones' + (noLeidas ? ': ' + noLeidas + ' sin leer' : '')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+            </svg>
+            <span class="campana-contador" *ngIf="noLeidas > 0">{{ noLeidas > 99 ? '99+' : noLeidas }}</span>
+          </button>
+          <div class="campana-fondo" *ngIf="panelNotificaciones" (click)="cerrarNotificaciones()"></div>
+          <div class="campana-panel" *ngIf="panelNotificaciones" role="dialog" aria-label="Notificaciones">
+            <div class="campana-panel__head">
+              <strong>Notificaciones</strong>
+              <button type="button" class="campana-todas" *ngIf="noLeidas > 0" (click)="marcarTodasLeidas()">
+                Marcar todas como leídas
+              </button>
+            </div>
+            <p class="campana-vacio" *ngIf="cargandoNotificaciones">Cargando...</p>
+            <p class="campana-vacio" *ngIf="!cargandoNotificaciones && notificaciones.length === 0">
+              No tienes notificaciones.
+            </p>
+            <div class="campana-lista" *ngIf="!cargandoNotificaciones && notificaciones.length > 0">
+              <div class="campana-item" *ngFor="let n of notificaciones" role="button" tabindex="0"
+                   [class.campana-item--nueva]="!n.leida"
+                   (click)="abrirNotificacion(n)" (keyup.enter)="abrirNotificacion(n)">
+                <span class="campana-item__tipo">{{ n.tipo_display }}</span>
+                <span class="campana-item__titulo">{{ n.titulo }}</span>
+                <span class="campana-item__mensaje">{{ n.mensaje }}</span>
+                <span class="campana-item__fecha">{{ n.fecha_creacion | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
         <!-- NUEVO (SaaS - A.2): empresa del personal (y su sucursal, si tiene) -->
         <span class="empresa-chip" *ngIf="empresa"
               [title]="sucursal ? empresa.nombre + ' - ' + sucursal : empresa.nombre">

@@ -3,6 +3,10 @@
 # Endpoint de KPIs del Dashboard, consumido tanto por la web como por mobile.
 # SaaS: cada empresa ve solo sus indicadores; el SUPER_ADMIN ve los de toda
 # la plataforma (o los de una empresa con ?empresa=<slug>).
+# MODIFICADO (Fase 2): las ventas POS anuladas (conflicto resuelto devolviendo
+# el efectivo, CU08) no cuentan, y se resta lo reembolsado en devoluciones
+# completadas (CU12). Las reservas abiertas incluyen las pendientes de pago y
+# las confirmadas (reservas con anticipo); los pedidos cuentan solo si se pagaron.
 
 from datetime import date
 
@@ -18,9 +22,12 @@ from apps.users_auth.suscripciones import requiere_funcion
 from apps.users_auth.models import Usuario
 from apps.catalog.models import Producto, Sucursal, Proveedor
 from apps.inventory.models import StockItem
-from apps.sales.models import PosSale, Order
+from apps.sales.models import Devolucion, PosSale, Order
 from apps.reservations.models import FittingReservation
 
+# NUEVO (Fase 2): estados que cuentan en los indicadores.
+ESTADOS_PEDIDO_PAGADO = ["PAGADA", "ENVIADA", "ENTREGADA"]
+ESTADOS_RESERVA_ABIERTA = ["PENDIENTE", "PENDIENTE_PAGO", "CONFIRMADA"]
 
 class DashboardKpisView(APIView):
     """
@@ -59,8 +66,12 @@ class DashboardKpisView(APIView):
         sucursales = filtrar_queryset(Sucursal.objects.filter(estado="ACTIVA"), request)
         proveedores = filtrar_queryset(Proveedor.objects.filter(estado="ACTIVO"), request)
         stock = filtrar_queryset(StockItem.objects.filter(estado=True), request)
-        ventas_pos = filtrar_queryset(PosSale.objects.all(), request)
-        ordenes = filtrar_queryset(Order.objects.all(), request)
+        # MODIFICADO (Fase 2): sin ventas anuladas ni pedidos sin pagar.
+        ventas_pos = filtrar_queryset(PosSale.objects.exclude(estado="ANULADA"), request)
+        ordenes = filtrar_queryset(Order.objects.filter(estado__in=ESTADOS_PEDIDO_PAGADO), request)
+        devoluciones_pos = filtrar_queryset(
+            Devolucion.objects.filter(estado="COMPLETADA", id_venta__isnull=False), request
+        )
         reservas = filtrar_queryset(FittingReservation.objects.all(), request)
 
         stock_total = stock.aggregate(total=Sum("cantidad"))["total"] or 0
@@ -71,7 +82,9 @@ class DashboardKpisView(APIView):
         # simple para esta primera versión del dashboard.
         productos_stock_bajo = stock.filter(cantidad__lte=5).count()
 
-        monto_total_ventas = ventas_pos.aggregate(total=Sum("total"))["total"] or 0
+        monto_bruto = ventas_pos.aggregate(total=Sum("total"))["total"] or 0
+        monto_devoluciones = devoluciones_pos.aggregate(total=Sum("monto_reembolso"))["total"] or 0
+        monto_total_ventas = monto_bruto - monto_devoluciones
 
         return Response({
             "total_clientes": total_clientes,
@@ -82,10 +95,11 @@ class DashboardKpisView(APIView):
             "productos_stock_bajo": productos_stock_bajo,
             "total_ventas_pos": ventas_pos.count(),
             "monto_total_ventas": str(monto_total_ventas),
+            # NUEVO (Fase 2): lo devuelto en caja por devoluciones (ya restado arriba).
+            "monto_devoluciones": str(monto_devoluciones),
             "total_ordenes": ordenes.count(),
-            "reservas_pendientes": reservas.filter(estado="PENDIENTE").count(),
+            "reservas_pendientes": reservas.filter(estado__in=ESTADOS_RESERVA_ABIERTA).count(),
         })
-
 
 def _fecha_param(request, nombre, defecto):
     """Lee una fecha AAAA-MM-DD de los parámetros de la URL."""
@@ -96,7 +110,6 @@ def _fecha_param(request, nombre, defecto):
         return date.fromisoformat(valor)
     except ValueError:
         raise ValidationError({nombre: "Usa el formato AAAA-MM-DD."})
-
 
 class ComparativoSucursalesView(APIView):
     """NUEVO (SaaS - paso 5): reporte comparativo entre sucursales (sin IA).
@@ -123,14 +136,20 @@ class ComparativoSucursalesView(APIView):
         )
         filas = []
         for sucursal in sucursales:
+            # MODIFICADO (Fase 2): sin ventas anuladas y restando los reembolsos.
             pos = PosSale.objects.filter(
                 id_sucursal=sucursal, fecha_venta__date__range=(desde, hasta)
-            ).aggregate(cantidad=Count("id_venta"), total=Sum("total"))
+            ).exclude(estado="ANULADA").aggregate(cantidad=Count("id_venta"), total=Sum("total"))
             web = Order.objects.filter(
                 id_sucursal=sucursal,
-                estado__in=["PAGADA", "ENVIADA", "ENTREGADA"],
+                estado__in=ESTADOS_PEDIDO_PAGADO,
                 fecha_creacion__date__range=(desde, hasta),
             ).aggregate(cantidad=Count("id_orden"), total=Sum("total"))
+            devuelto = Devolucion.objects.filter(
+                id_sucursal=sucursal,
+                estado="COMPLETADA",
+                fecha_completado__date__range=(desde, hasta),
+            ).aggregate(total=Sum("monto_reembolso"))["total"] or 0
             reservas = FittingReservation.objects.filter(
                 id_sucursal=sucursal, fecha_reserva__range=(desde, hasta)
             ).count()
@@ -147,7 +166,8 @@ class ComparativoSucursalesView(APIView):
                 "total_pos": str(total_pos),
                 "ordenes_web": web["cantidad"],
                 "total_web": str(total_web),
-                "total_vendido": str(total_pos + total_web),
+                "total_devoluciones": str(devuelto),
+                "total_vendido": str(total_pos + total_web - devuelto),
                 "reservas": reservas,
                 "stock_unidades": stock,
             })

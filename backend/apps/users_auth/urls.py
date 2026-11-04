@@ -1,3 +1,5 @@
+# backend/apps/users_auth/urls.py
+# MODIFICADO (Fase 2 - CU16): rutas del centro de notificaciones.
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
@@ -10,6 +12,8 @@ from .views import (
 )
 from .views_suscripcion import PlanSuscripcionViewSet, SuscripcionViewSet
 from .views_empresa import EmpresaViewSet, PerfilView
+from .views_notificaciones import NotificacionViewSet
+
 router = DefaultRouter()
 router.register("usuarios", UsuarioViewSet, basename="usuarios")
 router.register("roles", RolViewSet, basename="roles")
@@ -20,6 +24,9 @@ router.register("planes", PlanSuscripcionViewSet, basename="planes")
 router.register("suscripciones", SuscripcionViewSet, basename="suscripciones")
 # NUEVO (SaaS): empresas (tenants) con su logo, administrador y suscripción.
 router.register("empresas", EmpresaViewSet, basename="empresas")
+# NUEVO (Fase 2 - CU16): centro de notificaciones.
+router.register("notificaciones", NotificacionViewSet, basename="notificaciones")
+
 urlpatterns = [
     path("registro/", RegistroClienteView.as_view(), name="registro"),
     path("login/", LoginView.as_view(), name="login"),
