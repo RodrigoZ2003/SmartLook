@@ -3,6 +3,7 @@
 <!-- MODIFICADO (Fase 3): logotipo cuadrado en la vista de celular (menú angosto). -->
 <!-- MODIFICADO (Fase 3 - CU09): opción "Analítica" (Machine Learning, SUPER_ADMIN y ADMIN_EMPRESA con plan con IA). -->
 <!-- MODIFICADO (Fase 3 - CU07): opción "Traspasos" debajo de Inventario (SUPER_ADMIN, ADMIN_EMPRESA y encargado). -->
+<!-- MODIFICADO (Fase 3 - CU04): "Clientes" solo para SUPER_ADMIN y ADMIN_EMPRESA (los mismos roles de puedeVerEmpresas). -->
 <div class="layout">
   <aside class="sidebar" [class.sidebar--hidden]="!sidebarVisible">
     <div class="sidebar-inner">
@@ -187,7 +188,8 @@
           </svg>
           <span>Permisos</span>
         </a>
-        <a routerLink="/clients" class="nav-link" *ngIf="esPersonal">
+        <!-- MODIFICADO (Fase 3 - CU04): perfil de clientes por empresa, solo SUPER_ADMIN y ADMIN_EMPRESA. -->
+        <a routerLink="/clients" class="nav-link" *ngIf="puedeVerEmpresas">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="8" r="3.5"/>
             <path d="M5 21c0-3.5 3-6.5 7-6.5s7 3 7 6.5"/>

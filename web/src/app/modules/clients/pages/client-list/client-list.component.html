@@ -1,40 +1,165 @@
 <!-- web/src/app/modules/clients/pages/client-list/client-list.component.html -->
-<div class="clients-container">
-  <div class="header">
-    <h2>Clientes</h2>
-    <input
-      type="text"
-      placeholder="Buscar por nombre o correo..."
-      [(ngModel)]="busqueda">
+<!-- MODIFICADO (Fase 3 - CU04): perfil de clientes por empresa. -->
+<div class="clientes">
+
+  <header class="encabezado">
+    <div>
+      <h2>Clientes</h2>
+      <p>{{ superAdmin ? 'Todos los clientes de la plataforma y lo que compraron en cada empresa.' : 'Clientes que compraron o reservaron en tu empresa.' }}</p>
+    </div>
+    <input type="text" placeholder="Buscar por nombre, correo o empresa..." [(ngModel)]="busqueda" aria-label="Buscar cliente">
+  </header>
+
+  <div class="alerta alerta--error" *ngIf="error">{{ error }}</div>
+
+  <div class="kpis" *ngIf="!loading && clientes.length > 0">
+    <div class="kpi"><span>Clientes</span><strong>{{ clientes.length }}</strong></div>
+    <div class="kpi"><span>Compras</span><strong>{{ totalCompras }}</strong></div>
+    <div class="kpi"><span>Total gastado</span><strong>Bs {{ totalGastado | number:'1.2-2' }}</strong></div>
   </div>
 
-  <div class="table-container">
-    <table class="table">
+  <p class="vacio" *ngIf="loading">Cargando clientes...</p>
+
+  <div class="table-wrap" *ngIf="!loading">
+    <table>
       <thead>
         <tr>
-          <th>Nombre</th>
-          <th>Correo</th>
+          <th>Cliente</th>
           <th>Teléfono</th>
-          <th>Estado</th>
-          <th>Registrado</th>
+          <th *ngIf="superAdmin">Empresas</th>
+          <th class="num">Compras</th>
+          <th class="num">Total gastado</th>
+          <th>Última compra</th>
+          <th>Segmento</th>
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let cliente of clientesFiltrados">
-          <td>{{ cliente.nombres }} {{ cliente.apellidos }}</td>
-          <td>{{ cliente.correo }}</td>
-          <td>{{ cliente.telefono || 'N/A' }}</td>
+        <tr *ngFor="let c of clientesFiltrados" (click)="verPerfil(c)" [class.activa]="seleccionadoId === c.id" tabindex="0" (keyup.enter)="verPerfil(c)">
           <td>
-            <span class="badge" [class.active]="cliente.estado === 'ACTIVO'">
-              {{ cliente.estado }}
-            </span>
+            <span class="nombre">{{ c.nombre }}</span>
+            <span class="correo">{{ c.correo }}</span>
           </td>
-          <td>{{ cliente.fecha_creacion | date:'dd/MM/yyyy HH:mm' }}</td>
+          <td>{{ c.telefono || '-' }}</td>
+          <td *ngIf="superAdmin">{{ c.empresas.join(', ') || '-' }}</td>
+          <td class="num">{{ c.compras }}</td>
+          <td class="num">Bs {{ c.total_gastado | number:'1.2-2' }}</td>
+          <td>{{ c.ultima_compra ? (c.ultima_compra | date:'dd/MM/yyyy') : '-' }}</td>
+          <td>
+            <span *ngFor="let s of c.segmentos" [class]="claseSegmento(s.segmento)" [title]="s.empresa">
+              {{ superAdmin ? s.empresa + ': ' : '' }}{{ s.nombre }}
+            </span>
+            <span class="muted" *ngIf="c.segmentos.length === 0">-</span>
+          </td>
         </tr>
-        <tr *ngIf="!loading && clientesFiltrados.length === 0">
-          <td colspan="5">No hay clientes registrados todavía.</td>
+        <tr *ngIf="clientesFiltrados.length === 0">
+          <td [attr.colspan]="superAdmin ? 7 : 6" class="muted">
+            {{ clientes.length === 0 ? 'Todavía no hay clientes con compras o reservas.' : 'Ningún cliente coincide con la búsqueda.' }}
+          </td>
         </tr>
       </tbody>
     </table>
   </div>
+
+  <!-- ============================================================ PERFIL -->
+  <div class="fondo" *ngIf="seleccionadoId !== null" (click)="cerrarPerfil()"></div>
+  <aside class="panel" *ngIf="seleccionadoId !== null" role="dialog" aria-label="Perfil del cliente">
+    <p class="vacio" *ngIf="cargandoPerfil">Cargando perfil...</p>
+
+    <ng-container *ngIf="perfil as p">
+      <header class="panel-header">
+        <div>
+          <h3>{{ p.cliente.nombre }}</h3>
+          <p class="sub">{{ p.cliente.correo }} · {{ p.cliente.telefono || 'Sin teléfono' }}</p>
+          <p class="sub">Cliente desde el {{ p.cliente.fecha_registro | date:'dd/MM/yyyy' }}</p>
+        </div>
+        <button type="button" class="cerrar" (click)="cerrarPerfil()" aria-label="Cerrar">&times;</button>
+      </header>
+
+      <div class="segmentos" *ngIf="p.segmentos.length > 0">
+        <div class="segmento" *ngFor="let s of p.segmentos">
+          <span [class]="claseSegmento(s.segmento)">{{ s.nombre }}</span>
+          <small>{{ p.super_admin ? s.empresa + ' · ' : '' }}según la Analítica: última compra hace {{ s.recencia_dias }} días, {{ s.frecuencia }} compras</small>
+        </div>
+      </div>
+
+      <div class="kpis kpis--panel">
+        <div class="kpi"><span>Compras</span><strong>{{ p.resumen.compras }}</strong><small>{{ p.resumen.pedidos_web }} web · {{ p.resumen.ventas_tienda }} en tienda</small></div>
+        <div class="kpi"><span>Total gastado</span><strong>Bs {{ p.resumen.total_gastado | number:'1.2-2' }}</strong><small *ngIf="p.resumen.monto_reembolsado > 0">Descontando Bs {{ p.resumen.monto_reembolsado | number:'1.2-2' }} reembolsados</small></div>
+        <div class="kpi"><span>Ticket promedio</span><strong>Bs {{ p.resumen.ticket_promedio | number:'1.2-2' }}</strong></div>
+        <div class="kpi"><span>Última compra</span><strong>{{ p.resumen.ultima_compra ? (p.resumen.ultima_compra | date:'dd/MM/yyyy') : '-' }}</strong><small *ngIf="p.resumen.primera_compra">Primera: {{ p.resumen.primera_compra | date:'dd/MM/yyyy' }}</small></div>
+        <div class="kpi"><span>Sucursal favorita</span><strong class="texto">{{ p.resumen.sucursal_favorita || '-' }}</strong></div>
+        <div class="kpi"><span>Reservas · Devoluciones · Cambios</span><strong>{{ p.resumen.reservas }} · {{ p.resumen.devoluciones }} · {{ p.resumen.cambios }}</strong></div>
+      </div>
+
+      <section class="seccion" *ngIf="p.preferencias.unidades > 0">
+        <h4>Preferencias <small>({{ p.preferencias.unidades }} prendas compradas)</small></h4>
+        <div class="preferencias">
+          <div>
+            <span class="titulo">Prendas</span>
+            <span class="chip" *ngFor="let x of p.preferencias.prendas">{{ x.nombre }} <b>{{ x.unidades }}</b></span>
+          </div>
+          <div>
+            <span class="titulo">Categorías</span>
+            <span class="chip" *ngFor="let x of p.preferencias.categorias">{{ x.nombre }} <b>{{ x.unidades }}</b></span>
+          </div>
+          <div>
+            <span class="titulo">Tallas</span>
+            <span class="chip" *ngFor="let x of p.preferencias.tallas">{{ x.nombre }} <b>{{ x.unidades }}</b></span>
+          </div>
+          <div>
+            <span class="titulo">Colores</span>
+            <span class="chip" *ngFor="let x of p.preferencias.colores">{{ x.nombre }} <b>{{ x.unidades }}</b></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="seccion" *ngIf="p.por_empresa.length > 0">
+        <h4>Compras por empresa</h4>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Empresa</th><th class="num">Compras</th><th class="num">Total</th></tr></thead>
+            <tbody>
+              <tr *ngFor="let e of p.por_empresa">
+                <td>{{ e.empresa }}</td>
+                <td class="num">{{ e.compras }}</td>
+                <td class="num">Bs {{ e.total | number:'1.2-2' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="seccion">
+        <h4>Historial</h4>
+        <div class="table-wrap" *ngIf="p.historial.length > 0; else sinHistorial">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Movimiento</th>
+                <th *ngIf="p.super_admin">Empresa</th>
+                <th>Sucursal</th>
+                <th>Estado</th>
+                <th class="num">Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let h of p.historial">
+                <td>{{ h.fecha | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td>
+                  <span [class]="claseEvento(h.tipo)">{{ h.tipo_display }} #{{ h.numero }}</span>
+                  <span class="detalle" *ngIf="h.detalle">{{ h.detalle }}</span>
+                </td>
+                <td *ngIf="p.super_admin">{{ h.empresa }}</td>
+                <td>{{ h.sucursal || '-' }}</td>
+                <td>{{ h.estado }}</td>
+                <td class="num">{{ h.monto !== null ? ('Bs ' + (h.monto | number:'1.2-2')) : '-' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <ng-template #sinHistorial><p class="vacio">Sin movimientos.</p></ng-template>
+      </section>
+    </ng-container>
+  </aside>
 </div>

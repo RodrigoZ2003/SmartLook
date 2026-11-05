@@ -1,35 +1,356 @@
 // web/src/app/modules/clients/pages/client-list/client-list.component.scss
+// MODIFICADO (Fase 3 - CU04): lista de clientes por empresa y panel de perfil.
 
-.clients-container {
-  padding: 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
+$primary: #1a1a2e;
+$accent: #0f3460;
+$white: #ffffff;
+$line: #e2e5ec;
+$muted: #6b6459;
+$fondo: #f6f7fb;
 
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-    gap: 1rem;
+.clientes {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  box-sizing: border-box;
+  min-width: 0;
+}
 
-    h2 {
-      color: #1a1a2e;
+.encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0;
+    color: $primary;
+    font-size: 1.3rem;
+  }
+
+  p {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+    color: $muted;
+  }
+
+  input {
+    flex: 1 1 260px;
+    max-width: 360px;
+    padding: 0.55rem 0.75rem;
+    border-radius: 8px;
+    border: 1px solid $line;
+    font-size: 0.85rem;
+  }
+}
+
+.alerta--error {
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+  background: #fdecea;
+  color: #b3261e;
+  border: 1px solid #f5c2bd;
+}
+
+.vacio {
+  color: $muted;
+  font-size: 0.85rem;
+  margin: 0.25rem 0;
+}
+
+.muted {
+  color: $muted;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+
+  &--panel {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+}
+
+.kpi {
+  min-width: 0;
+  background: $white;
+  border: 1px solid $line;
+  border-radius: 12px;
+  padding: 0.7rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+
+  span {
+    font-size: 0.74rem;
+    color: $muted;
+  }
+
+  strong {
+    font-size: 1.15rem;
+    color: $accent;
+
+    &.texto {
+      font-size: 0.9rem;
     }
+  }
 
-    input {
-      flex: 1;
-      max-width: 340px;
-      padding: 0.5rem 0.75rem;
-      border-radius: 6px;
-      border: 1px solid #ccc;
+  small {
+    font-size: 0.7rem;
+    color: $muted;
+  }
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: $white;
+  border: 1px solid $line;
+  border-radius: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+
+  th,
+  td {
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid $line;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: #f1f2f6;
+    color: $primary;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .num {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  tbody tr {
+    cursor: pointer;
+
+    &:hover td,
+    &.activa td {
+      background: #eef6ff;
     }
   }
 }
 
-.table-container {
-  background: white;
-  border-radius: 8px;
-  padding: 1rem;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  overflow-x: auto;
+.nombre {
+  display: block;
+  font-weight: 600;
+  color: $primary;
+}
+
+.correo,
+.detalle {
+  display: block;
+  font-size: 0.74rem;
+  color: $muted;
+}
+
+.seg {
+  display: inline-block;
+  margin: 0 0.25rem 0.2rem 0;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: $white;
+  white-space: nowrap;
+}
+
+.seg-vip {
+  background: #0f3460;
+}
+
+.seg-leal {
+  background: #16a085;
+}
+
+.seg-ocasional {
+  background: #f39c12;
+}
+
+.seg-riesgo {
+  background: #e94560;
+}
+
+// Panel lateral del perfil
+.fondo {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 26, 46, 0.35);
+  z-index: 40;
+}
+
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(720px, 100vw);
+  background: $white;
+  z-index: 41;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+  padding: 1.1rem 1.2rem 1.5rem;
+  overflow-y: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+
+  table tbody tr {
+    cursor: default;
+
+    &:hover td {
+      background: transparent;
+    }
+  }
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+
+  h3 {
+    margin: 0 0 0.25rem;
+    color: $primary;
+  }
+
+  .sub {
+    margin: 0;
+    font-size: 0.8rem;
+    color: $muted;
+  }
+}
+
+.cerrar {
+  border: none;
+  background: none;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  color: $muted;
+}
+
+.segmentos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.segmento {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+
+  small {
+    font-size: 0.75rem;
+    color: $muted;
+  }
+}
+
+.seccion h4 {
+  margin: 0 0 0.6rem;
+  color: $primary;
+  font-size: 0.95rem;
+
+  small {
+    font-weight: 400;
+    color: $muted;
+  }
+}
+
+.preferencias {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+
+  > div {
+    background: $fondo;
+    border: 1px solid $line;
+    border-radius: 10px;
+    padding: 0.6rem 0.7rem;
+  }
+
+  .titulo {
+    display: block;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: $muted;
+    margin-bottom: 0.35rem;
+  }
+}
+
+.chip {
+  display: inline-block;
+  margin: 0 0.3rem 0.3rem 0;
+  border: 1px solid $line;
+  background: $white;
+  border-radius: 999px;
+  padding: 0.12rem 0.55rem;
+  font-size: 0.76rem;
+  color: $primary;
+
+  b {
+    color: $accent;
+  }
+}
+
+.evento {
+  font-weight: 600;
+  color: $primary;
+
+  &--pedido {
+    color: $accent;
+  }
+
+  &--venta {
+    color: #16a085;
+  }
+
+  &--reserva {
+    color: #8e44ad;
+  }
+
+  &--devolucion {
+    color: #e94560;
+  }
+
+  &--cambio {
+    color: #d35400;
+  }
+}
+
+@media (max-width: 600px) {
+  .clientes {
+    padding: 0.6rem;
+  }
+
+  .encabezado input {
+    max-width: none;
+  }
+
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .preferencias {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
