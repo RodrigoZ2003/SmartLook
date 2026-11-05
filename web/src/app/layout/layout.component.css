@@ -1,3 +1,5 @@
+/* web/src/app/layout/layout.component.css */
+/* MODIFICADO (Fase 3): en la vista de celular el menú muestra el logotipo cuadrado en lugar de "SL". */
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Inter:wght@400;500;600&display=swap');
 :host {
   --bg-deep: #14110F;
@@ -49,6 +51,10 @@
   margin-bottom: 2rem;
   padding-left: 0.5rem;
   flex-shrink: 0;
+}
+/* NUEVO: logotipo cuadrado, solo en la vista de celular (menú angosto). */
+.logo-img {
+  display: none;
 }
 .sidebar nav {
   display: flex;
@@ -370,12 +376,21 @@ main {
     padding: 1.5rem 0.75rem;
   }
   .logo {
-    font-size: 0;
     padding-left: 0;
+    display: flex;
+    justify-content: center;
   }
-  .logo::before {
-    content: 'SL';
-    font-size: 1.1rem;
+  /* MODIFICADO: en lugar de "SL" se muestra el logotipo cuadrado. */
+  .logo-texto {
+    display: none;
+  }
+  .logo-img {
+    display: block;
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 10px;
+    background: #ffffff;
   }
   .nav-link span {
     display: none;

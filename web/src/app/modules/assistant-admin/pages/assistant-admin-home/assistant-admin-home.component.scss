@@ -3,6 +3,10 @@
 // Paleta de la web de SmartLook (styles.scss): $primary #1a1a2e, $accent #0f3460.
 // MODIFICADO (Fase 3 - CU13): min-width: 0 en las columnas del grid para que
 // el gráfico de Chart.js no las agrande sin fin (congelaba la página).
+// MODIFICADO (Fase 3 - CU13): vista de celular (solo bajo 900px / 600px, la de
+// computadora no cambia): botón de enviar visible, botones de descarga dentro
+// de la tarjeta e indicadores de 2 en 2. La pantalla de Reportes usa estos
+// mismos estilos para el resultado.
 
 $primary: #1a1a2e;
 $accent: #0f3460;
@@ -405,5 +409,58 @@ table {
 
   .chat-col {
     height: 60vh;
+  }
+}
+
+// Celular: el campo de texto no empuja fuera el botón de enviar.
+@media (max-width: 900px) {
+  .chat-input input {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .admin-assistant {
+    padding: 0.6rem;
+    gap: 0.9rem;
+  }
+
+  .chat-header p {
+    display: none;
+  }
+
+  .result-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.85rem 1rem;
+  }
+
+  .download-group {
+    width: 100%;
+
+    button {
+      flex: 1;
+      padding: 0.45rem 0.4rem;
+    }
+  }
+
+  .kpis {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .kpi {
+    min-width: 0;
+    padding: 0.6rem 0.75rem;
+
+    strong {
+      font-size: 1.05rem;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  table {
+    font-size: 0.78rem;
   }
 }

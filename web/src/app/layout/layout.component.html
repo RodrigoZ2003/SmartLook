@@ -3,7 +3,10 @@
 <div class="layout">
   <aside class="sidebar" [class.sidebar--hidden]="!sidebarVisible">
     <div class="sidebar-inner">
-      <div class="logo">SmartLook</div>
+            <div class="logo">
+        <img src="assets/images/logotipo-smartlook.jpeg" alt="SmartLook" class="logo-img">
+        <span class="logo-texto">SmartLook</span>
+      </div>
       <nav>
         <a routerLink="/dashboard" class="nav-link" *ngIf="esPersonal">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
