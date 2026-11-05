@@ -1,12 +1,14 @@
 # backend/apps/analytics/perfil_clientes.py
 #
 # NUEVO (Fase 3 - CU04): perfil de clientes por empresa.
+# CORREGIDO (CU04): el SUPER_ADMIN ve TODOS los clientes registrados, aunque
+# todavía no hayan comprado (aparecen con 0 compras).
 #
 # El cliente es global (puede comprar en cualquier empresa), pero cada empresa
 # solo ve a SUS clientes: los que tienen al menos un pedido web (no pendiente),
 # una venta en tienda con su correo o una reserva en esa empresa. Y de cada
-# cliente solo ve lo que hizo en ella. El SUPER_ADMIN ve todos los clientes y
-# todo su historial, con el detalle por empresa.
+# cliente solo ve lo que hizo en ella. El SUPER_ADMIN ve todos los clientes
+# registrados (con o sin compras) y todo su historial, con el detalle por empresa.
 #
 # Cifras (iguales al resto del sistema):
 #   compras        = pedidos web pagados (PAGADA, ENVIADA, ENTREGADA) + ventas
@@ -59,7 +61,9 @@ def _reembolsos(empresa_id, clientes=None):
 
 
 def ids_clientes(empresa_id):
-    """Clientes con actividad en la empresa (o en cualquiera, si empresa_id es None)."""
+    """Clientes con actividad en la empresa; todos los registrados si empresa_id es None."""
+    if empresa_id is None:
+        return set(Cliente.objects.values_list("id_cliente", flat=True))
     pedidos = _filtro_empresa(Order.objects.exclude(estado="PENDIENTE"), empresa_id)
     ventas = _filtro_empresa(PosSale.objects.filter(id_cliente__isnull=False), empresa_id)
     reservas = _filtro_empresa(

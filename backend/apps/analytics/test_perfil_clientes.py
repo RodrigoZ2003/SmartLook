@@ -2,7 +2,8 @@
 
 - El ADMIN_EMPRESA solo ve a los clientes con actividad en su empresa: pedido
   web (no pendiente), compra en tienda con su correo o reserva pagada.
-- El SUPER_ADMIN ve a todos, con sus empresas y el detalle por empresa.
+- El SUPER_ADMIN ve a todos los clientes registrados (aunque no hayan comprado),
+  con sus empresas y el detalle por empresa.
 - Total gastado = compras pagadas - reembolsos de devoluciones completadas.
 - El perfil de un cliente ajeno responde 404; encargado y cliente reciben 403.
 - El segmento de ML solo se muestra en las empresas donde el cliente compró.
@@ -112,12 +113,24 @@ class PerfilClientesTests(TestCase):
         self.assertEqual(self.correos("admin@perfil-b.test"), {"c2@perfil.test"})
 
     def test_super_admin_ve_a_todos(self):
-        """El SUPER_ADMIN ve a c1, c2 y c3 con sus empresas."""
+        """El SUPER_ADMIN ve a los 4 clientes; c4 (sin compras) aparece con 0."""
         datos = cliente_api("super@perfil.test").get(URL).data
         self.assertTrue(datos["super_admin"])
         por_correo = {c["correo"]: c for c in datos["clientes"]}
-        self.assertEqual(set(por_correo), {"c1@perfil.test", "c2@perfil.test", "c3@perfil.test"})
+        self.assertEqual(
+            set(por_correo),
+            {"c1@perfil.test", "c2@perfil.test", "c3@perfil.test", "c4@perfil.test"},
+        )
         self.assertEqual(por_correo["c2@perfil.test"]["empresas"], ["Empresa Perfil B"])
+        self.assertEqual(por_correo["c4@perfil.test"]["compras"], 0)
+        self.assertEqual(por_correo["c4@perfil.test"]["empresas"], [])
+
+    def test_super_admin_abre_perfil_sin_compras(self):
+        """El perfil de un cliente sin compras abre vacío para el SUPER_ADMIN."""
+        r = cliente_api("super@perfil.test").get(f"{URL}{self.c4.id_cliente}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["resumen"]["compras"], 0)
+        self.assertEqual(r.data["historial"], [])
 
     def test_total_gastado_resta_reembolsos(self):
         """c1: 100 + 200 - 50 de reembolso = 250 en 2 compras."""

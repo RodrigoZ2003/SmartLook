@@ -1,7 +1,10 @@
 // MODIFICADO: la foto se ve completa (cuadrada, contain sobre fondo blanco,
 // sin recortar la prenda) y en pantallas angostas el precio y el botón van
 // uno debajo del otro.
+// MODIFICADO (Fase 3): con el menú abierto en el celular la tarjeta queda muy
+// angosta; el precio ahora baja de línea en vez de salirse de la caja.
 .product-card {
+  min-width: 0;
   background: white;
   border-radius: 8px;
   overflow: hidden;
@@ -34,6 +37,7 @@
 
   .product-info {
     padding: 1rem;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     flex: 1;
@@ -121,6 +125,9 @@
 
         .product-price {
           font-size: 0.9rem;
+          white-space: normal;
+          overflow-wrap: anywhere;
+          line-height: 1.25;
         }
 
         .btn {
