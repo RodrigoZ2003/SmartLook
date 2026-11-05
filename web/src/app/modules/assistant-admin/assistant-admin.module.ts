@@ -4,6 +4,8 @@
 // protegida /assistant-admin (ver app-routing.module.ts).
 // MODIFICADO (Fase 3 - CU13): se agregan los reportes convencionales sin IA
 // (/assistant-admin/reportes) y el componente de gráficos con Chart.js.
+// MODIFICADO (Fase 3 - CU09): dashboard de Analítica con Machine Learning
+// (/assistant-admin/analitica), que reutiliza el componente de gráficos.
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -11,9 +13,15 @@ import { AssistantAdminRoutingModule } from './assistant-admin-routing.module';
 import { AssistantAdminHomeComponent } from './pages/assistant-admin-home/assistant-admin-home.component';
 import { ReportesHomeComponent } from './pages/reportes-home/reportes-home.component';
 import { GraficoReporteComponent } from './components/grafico-reporte/grafico-reporte.component';
+import { AnaliticaHomeComponent } from './pages/analitica-home/analitica-home.component';
 
 @NgModule({
-  declarations: [AssistantAdminHomeComponent, ReportesHomeComponent, GraficoReporteComponent],
+  declarations: [
+    AssistantAdminHomeComponent,
+    ReportesHomeComponent,
+    GraficoReporteComponent,
+    AnaliticaHomeComponent
+  ],
   imports: [CommonModule, FormsModule, AssistantAdminRoutingModule]
 })
 export class AssistantAdminModule {}

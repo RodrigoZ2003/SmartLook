@@ -18,6 +18,8 @@
 // NUEVO (Fase 2 - CU16): campana de notificaciones con contador y lista. La ven
 // el cliente, el SUPER_ADMIN y el ADMIN_EMPRESA (cajero, encargado y repartidor
 // no reciben avisos). El contador se consulta cada minuto (sin push).
+// NUEVO (Fase 3 - CU09): puedeVerAnalitica (Analítica con Machine Learning:
+// solo SUPER_ADMIN y ADMIN_EMPRESA, con plan que incluya IA).
 import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription, timer } from 'rxjs';
@@ -34,6 +36,8 @@ const ROLES_ENTREGAS = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL', 'R
 const ROLES_ASISTENTE = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
 const ROLES_DEVOLUCIONES = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
 const ROLES_EMPRESAS = ['SUPER_ADMIN', 'ADMIN_EMPRESA'];
+// NUEVO (Fase 3 - CU09): Analítica con Machine Learning.
+const ROLES_ANALITICA = ['SUPER_ADMIN', 'ADMIN_EMPRESA'];
 // NUEVO (CU16): el personal que recibe avisos.
 const ROLES_NOTIFICACIONES = ['SUPER_ADMIN', 'ADMIN_EMPRESA'];
 const INTERVALO_NOTIFICACIONES_MS = 60 * 1000;
@@ -52,6 +56,7 @@ export class LayoutComponent implements OnDestroy {
   puedeVerDevoluciones = false;
   esSuperAdmin = false;
   puedeVerEmpresas = false;
+  puedeVerAnalitica = false;
   empresa: EmpresaSesion | null = null;
   sucursal: string | null = null;
   esAdminEmpresa = false;
@@ -93,6 +98,7 @@ export class LayoutComponent implements OnDestroy {
     this.puedeVerDevoluciones = roles.some(rol => ROLES_DEVOLUCIONES.includes(rol));
     this.esSuperAdmin = roles.includes('SUPER_ADMIN');
     this.puedeVerEmpresas = roles.some(rol => ROLES_EMPRESAS.includes(rol));
+    this.puedeVerAnalitica = roles.some(rol => ROLES_ANALITICA.includes(rol));
     this.empresa = this.authService.obtenerEmpresa();
     this.sucursal = this.nombreCortoSucursal(this.usuario?.sucursal_nombre);
     this.esAdminEmpresa = roles.includes('ADMIN_EMPRESA');

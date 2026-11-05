@@ -4,9 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-
 
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
@@ -38,9 +36,7 @@ AI_TIMEOUT_SEG = int(os.getenv("AI_TIMEOUT_SEG", "15"))
 
 DEBUG = False
 
-
 ALLOWED_HOSTS = ["*"]
-
 
 
 INSTALLED_APPS = [
@@ -52,13 +48,11 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-
     # Terceros
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
     "drf_spectacular",
-
 
     # Apps locales
     "apps.users_auth",
@@ -68,8 +62,9 @@ INSTALLED_APPS = [
     "apps.sales",
     "apps.innovation",
     "apps.bi_reports",
+    # NUEVO (Fase 3 - CU09): analítica con Machine Learning.
+    "apps.analytics",
 ]
-
 
 
 MIDDLEWARE = [
@@ -96,9 +91,7 @@ MIDDLEWARE = [
 ]
 
 
-
 ROOT_URLCONF = "config.urls"
-
 
 
 TEMPLATES = [
@@ -133,11 +126,9 @@ TEMPLATES = [
 ]
 
 
-
 WSGI_APPLICATION = "config.wsgi.application"
 
 ASGI_APPLICATION = "config.asgi.application"
-
 
 
 DATABASES = {
@@ -182,7 +173,6 @@ DATABASES = {
 }
 
 
-
 AUTH_PASSWORD_VALIDATORS = [
 
     {
@@ -216,26 +206,19 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 
-
 LANGUAGE_CODE = "es-bo"
-
 
 TIME_ZONE = "America/La_Paz"
 
-
 USE_I18N = True
 
-
 USE_TZ = True
-
 
 
 STATIC_URL = "static/"
 
 
-
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
 
 
 
@@ -249,21 +232,17 @@ REST_FRAMEWORK = {
 
     ],
 
-
     "DEFAULT_PERMISSION_CLASSES": [
 
         "rest_framework.permissions.IsAuthenticated",
 
     ],
 
-
     "DEFAULT_PAGINATION_CLASS":
 
         "common.pagination.StandardPagination",
 
-
     "PAGE_SIZE": 20,
-
 
     "DEFAULT_SCHEMA_CLASS":
 
@@ -273,11 +252,9 @@ REST_FRAMEWORK = {
 
 
 
-
 # Simple JWT
 
 from datetime import timedelta
-
 
 
 SIMPLE_JWT = {
@@ -286,21 +263,17 @@ SIMPLE_JWT = {
 
         timedelta(hours=2),
 
-
     "REFRESH_TOKEN_LIFETIME":
 
         timedelta(days=7),
-
 
     "ROTATE_REFRESH_TOKENS":
 
         True,
 
-
     "BLACKLIST_AFTER_ROTATION":
 
         True,
-
 
     "AUTH_HEADER_TYPES":
 
@@ -311,7 +284,6 @@ SIMPLE_JWT = {
         ),
 
 }
-
 
 
 
@@ -335,7 +307,6 @@ CORS_ALLOWED_ORIGINS = [
 
 
 
-
 # DRF Spectacular
 
 SPECTACULAR_SETTINGS = {
@@ -344,26 +315,21 @@ SPECTACULAR_SETTINGS = {
 
         "SmartLook API",
 
-
     "DESCRIPTION":
 
         "Sistema omnicanal e-commerce y POS multi-sucursal",
-
 
     "VERSION":
 
         "1.0.0",
 
-
     "SERVE_INCLUDE_SCHEMA":
 
         False,
 
-
     "COMPONENT_SPLIT_REQUEST":
 
         True,
-
 
     "APPEND_COMPONENTS": {
 
@@ -389,7 +355,6 @@ SPECTACULAR_SETTINGS = {
 
     },
 
-
     "SECURITY": [
 
         {
@@ -399,7 +364,6 @@ SPECTACULAR_SETTINGS = {
         }
 
     ],
-
 
     "SWAGGER_UI_SETTINGS": {
 

@@ -1,0 +1,261 @@
+<!-- web/src/app/modules/assistant-admin/pages/analitica-home/analitica-home.component.html -->
+<!-- NUEVO (Fase 3 - CU09): dashboard de Analítica con Machine Learning. -->
+<div class="analitica">
+
+  <header class="encabezado">
+    <div>
+      <h2>Analítica</h2>
+      <p>Modelos de Machine Learning<span *ngIf="datos"> de {{ datos.empresa.nombre }}</span>, entrenados con las ventas de la empresa.</p>
+    </div>
+    <div class="acciones" *ngIf="datos">
+      <select *ngIf="datos.super_admin" [(ngModel)]="empresaSeleccionada" (ngModelChange)="cambiarEmpresa()"
+              [disabled]="cargando || reentrenando !== null" aria-label="Empresa">
+        <option *ngFor="let e of datos.empresas" [ngValue]="e.id">{{ e.nombre }}</option>
+      </select>
+      <button type="button" class="btn-primario" (click)="reentrenar('una')" [disabled]="reentrenando !== null || cargando">
+        {{ reentrenando === 'una' ? 'Reentrenando...' : 'Reentrenar' }}
+      </button>
+      <button type="button" class="btn-secundario" *ngIf="datos.super_admin" (click)="reentrenar('todas')"
+              [disabled]="reentrenando !== null || cargando">
+        {{ reentrenando === 'todas' ? 'Reentrenando...' : 'Reentrenar todas' }}
+      </button>
+    </div>
+  </header>
+
+  <div class="alerta alerta--ok" *ngIf="mensaje">{{ mensaje }}</div>
+  <div class="alerta alerta--error" *ngIf="error">{{ error }}</div>
+  <p class="vacio" *ngIf="cargando && !datos">Cargando analítica...</p>
+
+  <ng-container *ngIf="datos">
+
+    <!-- ============================================================ DEMANDA -->
+    <section class="bloque">
+      <header class="bloque-header">
+        <div>
+          <h3>Predicción de demanda</h3>
+          <p>Aprendizaje supervisado · RandomForest · unidades por prenda, sucursal y semana</p>
+        </div>
+        <div class="descargas">
+          <div class="descarga">
+            <span>Predicción</span>
+            <button type="button" *ngFor="let f of formatos" (click)="descargar('demanda', f.valor)" [disabled]="descargando !== null">
+              {{ descargando === 'demanda-' + f.valor ? '...' : f.texto }}
+            </button>
+          </div>
+          <div class="descarga">
+            <span>Evaluación</span>
+            <button type="button" *ngFor="let f of formatos" (click)="descargar('modelos', f.valor)" [disabled]="descargando !== null">
+              {{ descargando === 'modelos-' + f.valor ? '...' : f.texto }}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="alerta" *ngIf="!vigente">
+        Aún no hay un modelo de demanda entrenado con suficientes datos para esta empresa.
+        <span *ngFor="let v of datos.demanda.ventanas"><br>{{ v.ventana_meses }} meses: {{ v.aviso }}</span>
+      </div>
+
+      <ng-container *ngIf="vigente">
+        <div class="kpis">
+          <div class="kpi">
+            <span>Ventana vigente</span>
+            <strong>{{ vigente.ventana_meses }} meses</strong>
+            <small>Entrenado el {{ vigente.fecha }}</small>
+          </div>
+          <div class="kpi">
+            <span>MAE (error medio)</span>
+            <strong>{{ vigente.mae | number:'1.2-3' }}</strong>
+            <small>unidades por semana</small>
+          </div>
+          <div class="kpi">
+            <span>RMSE</span>
+            <strong>{{ vigente.rmse | number:'1.2-3' }}</strong>
+            <small>penaliza errores grandes</small>
+          </div>
+          <div class="kpi">
+            <span>R²</span>
+            <strong>{{ vigente.r2 !== null ? (vigente.r2 | number:'1.2-3') : '-' }}</strong>
+            <small>1 = predicción perfecta</small>
+          </div>
+          <div class="kpi">
+            <span>MAE línea base</span>
+            <strong>{{ vigente.mae_linea_base | number:'1.2-3' }}</strong>
+            <small class="chip" [ngClass]="'chip--' + comparacion(vigente)">{{ textoComparacion(vigente) }}</small>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <app-grafico-reporte [grafico]="graficoVentanas"></app-grafico-reporte>
+          <div class="tarjeta">
+            <h4>Comparación de ventanas de entrenamiento</h4>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Ventana</th>
+                    <th class="num">Entren.</th>
+                    <th class="num">Prueba</th>
+                    <th class="num">MAE</th>
+                    <th class="num">RMSE</th>
+                    <th class="num">R²</th>
+                    <th class="num">Base</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let v of datos.demanda.ventanas" [class.vigente]="v.vigente">
+                    <td>{{ v.ventana_meses }} meses <span class="marca" *ngIf="v.vigente">vigente</span></td>
+                    <ng-container *ngIf="!v.aviso; else sinDatos">
+                      <td class="num">{{ v.filas_entrenamiento }}</td>
+                      <td class="num">{{ v.filas_prueba }}</td>
+                      <td class="num">{{ v.mae | number:'1.2-3' }}</td>
+                      <td class="num">{{ v.rmse | number:'1.2-3' }}</td>
+                      <td class="num">{{ v.r2 !== null ? (v.r2 | number:'1.2-3') : '-' }}</td>
+                      <td class="num">{{ v.mae_linea_base | number:'1.2-3' }}</td>
+                    </ng-container>
+                    <ng-template #sinDatos><td colspan="6" class="muted">{{ v.aviso }}</td></ng-template>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="ayuda">
+              Se entrena con 3, 5 y 12 meses de historial y se evalúa con el último 25% de las semanas.
+              Queda vigente la ventana con menor MAE. La línea base es el promedio de las últimas 4 semanas.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <app-grafico-reporte [grafico]="graficoPrueba"></app-grafico-reporte>
+          <app-grafico-reporte [grafico]="graficoImportancia"></app-grafico-reporte>
+        </div>
+
+        <div class="tarjeta">
+          <div class="tarjeta-header">
+            <h4>Demanda prevista para las próximas 4 semanas</h4>
+            <select [(ngModel)]="sucursalFiltro" aria-label="Sucursal">
+              <option value="">Todas las sucursales</option>
+              <option *ngFor="let s of sucursales" [value]="s">{{ s }}</option>
+            </select>
+          </div>
+          <div class="table-wrap" *ngIf="filasPrediccion.length > 0; else sinPredicciones">
+            <table>
+              <thead>
+                <tr>
+                  <th>Sucursal</th>
+                  <th>Prenda</th>
+                  <th class="num" *ngFor="let s of datos.demanda.predicciones.semanas">Sem {{ semanaCorta(s) }}</th>
+                  <th class="num">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let f of filasPrediccion">
+                  <td>{{ f.sucursal }}</td>
+                  <td>{{ f.prenda }}</td>
+                  <td class="num" *ngFor="let u of f.unidades">{{ u | number:'1.1-1' }}</td>
+                  <td class="num"><strong>{{ f.total | number:'1.1-1' }}</strong></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ng-template #sinPredicciones><p class="vacio">Sin predicciones para mostrar.</p></ng-template>
+          <p class="ayuda">Total previsto: <strong>{{ totalPrevisto | number:'1.1-1' }}</strong> unidades. Son valores esperados, no pedidos confirmados.</p>
+        </div>
+
+        <app-grafico-reporte [grafico]="graficoPrendas"></app-grafico-reporte>
+      </ng-container>
+    </section>
+
+    <!-- ======================================================= SEGMENTACIÓN -->
+    <section class="bloque">
+      <header class="bloque-header">
+        <div>
+          <h3>Segmentación de clientes</h3>
+          <p>Aprendizaje no supervisado · K-means sobre recencia, frecuencia y monto (últimos 12 meses)</p>
+        </div>
+        <div class="descargas">
+          <div class="descarga">
+            <span>Segmentos</span>
+            <button type="button" *ngFor="let f of formatos" (click)="descargar('segmentos', f.valor)" [disabled]="descargando !== null">
+              {{ descargando === 'segmentos-' + f.valor ? '...' : f.texto }}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div class="alerta" *ngIf="!datos.segmentacion">Aún no hay una segmentación entrenada para esta empresa.</div>
+
+      <ng-container *ngIf="datos.segmentacion as seg">
+        <div class="alerta" *ngIf="seg.aviso">{{ seg.aviso }}</div>
+
+        <ng-container *ngIf="seg.k !== null">
+          <div class="kpis">
+            <div class="kpi">
+              <span>Clientes analizados</span>
+              <strong>{{ seg.clientes_total }}</strong>
+              <small>Entrenado el {{ seg.fecha }}</small>
+            </div>
+            <div class="kpi">
+              <span>Grupos (k)</span>
+              <strong>{{ seg.k }}</strong>
+              <small>VIP, leales, ocasionales y en riesgo</small>
+            </div>
+            <div class="kpi">
+              <span>Silhouette con k = {{ seg.k }}</span>
+              <strong>{{ seg.silhouette_k !== null ? (seg.silhouette_k | number:'1.2-3') : '-' }}</strong>
+              <small>de -1 a 1; más alto = grupos más separados</small>
+            </div>
+          </div>
+
+          <div class="segmentos">
+            <div class="segmento" *ngFor="let r of seg.resumen" [ngClass]="claseSegmento(r.segmento)">
+              <div class="segmento-head">
+                <strong>{{ r.nombre }}</strong>
+                <span class="segmento-cantidad">{{ r.clientes }}</span>
+              </div>
+              <p>{{ r.descripcion }}</p>
+              <ul>
+                <li><span>Última compra</span><b>{{ r.recencia_media | number:'1.0-1' }} días</b></li>
+                <li><span>Compras</span><b>{{ r.frecuencia_media | number:'1.0-1' }}</b></li>
+                <li><span>Monto medio</span><b>Bs {{ r.monto_medio | number:'1.2-2' }}</b></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <app-grafico-reporte [grafico]="graficoSegmentos"></app-grafico-reporte>
+            <app-grafico-reporte [grafico]="graficoSilhouette"></app-grafico-reporte>
+          </div>
+
+          <div class="tarjeta">
+            <h4>Clientes y su segmento</h4>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Correo</th>
+                    <th>Segmento</th>
+                    <th class="num">Días desde la última compra</th>
+                    <th class="num">Compras</th>
+                    <th class="num">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let c of seg.clientes">
+                    <td>{{ c.cliente }}</td>
+                    <td>{{ c.correo }}</td>
+                    <td><span class="badge" [ngClass]="claseSegmento(c.segmento)">{{ c.nombre_segmento }}</span></td>
+                    <td class="num">{{ c.recencia_dias }}</td>
+                    <td class="num">{{ c.frecuencia }}</td>
+                    <td class="num">Bs {{ c.monto | number:'1.2-2' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </ng-container>
+      </ng-container>
+    </section>
+  </ng-container>
+</div>

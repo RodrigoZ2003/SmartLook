@@ -1,0 +1,468 @@
+// web/src/app/modules/assistant-admin/pages/analitica-home/analitica-home.component.scss
+// NUEVO (Fase 3 - CU09): estilos del dashboard de Analítica.
+// min-width: 0 en todas las columnas de los grid: sin esto los gráficos de
+// Chart.js agrandan la columna sin fin y la página se congela.
+
+$primary: #1a1a2e;
+$accent: #0f3460;
+$white: #ffffff;
+$line: #e2e5ec;
+$muted: #6b6459;
+$fondo: #f6f7fb;
+
+.analitica {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1rem;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0;
+    color: $primary;
+    font-size: 1.3rem;
+  }
+
+  p {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+    color: $muted;
+  }
+}
+
+.acciones {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+
+  select {
+    border: 1px solid $line;
+    border-radius: 8px;
+    padding: 0.5rem 0.6rem;
+    font-size: 0.85rem;
+    background: $white;
+    color: $primary;
+  }
+}
+
+.btn-primario,
+.btn-secundario {
+  border-radius: 10px;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.btn-primario {
+  border: none;
+  background: $primary;
+  color: $white;
+
+  &:hover:not(:disabled) {
+    background: $accent;
+  }
+}
+
+.btn-secundario {
+  border: 1px solid $primary;
+  background: $white;
+  color: $primary;
+
+  &:hover:not(:disabled) {
+    background: $fondo;
+  }
+}
+
+.alerta {
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+  background: #fff8e6;
+  color: #7a5b00;
+  border: 1px solid #f3dfa2;
+
+  &--ok {
+    background: #e9f7ef;
+    color: #1e6b3a;
+    border-color: #bfe5cd;
+  }
+
+  &--error {
+    background: #fdecea;
+    color: #b3261e;
+    border-color: #f5c2bd;
+  }
+}
+
+.vacio {
+  color: $muted;
+  font-size: 0.85rem;
+}
+
+.bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: $fondo;
+  border: 1px solid $line;
+  border-radius: 16px;
+  padding: 1rem 1.1rem 1.2rem;
+  min-width: 0;
+}
+
+.bloque-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  h3 {
+    margin: 0;
+    color: $primary;
+    font-size: 1.05rem;
+  }
+
+  p {
+    margin: 0.2rem 0 0;
+    font-size: 0.8rem;
+    color: $muted;
+  }
+}
+
+.descargas {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.descarga {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+
+  span {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: $muted;
+    margin-right: 0.15rem;
+  }
+
+  button {
+    border: 1px solid $line;
+    background: $white;
+    color: $primary;
+    border-radius: 8px;
+    padding: 0.35rem 0.6rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      border-color: $accent;
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.kpi {
+  min-width: 0;
+  background: $white;
+  border: 1px solid $line;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+
+  span {
+    font-size: 0.75rem;
+    color: $muted;
+  }
+
+  strong {
+    font-size: 1.3rem;
+    color: $accent;
+  }
+
+  small {
+    font-size: 0.72rem;
+    color: $muted;
+  }
+}
+
+.chip {
+  align-self: flex-start;
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+  font-weight: 600;
+
+  &--mejor {
+    background: #e9f7ef;
+    color: #1e6b3a !important;
+  }
+
+  &--similar {
+    background: #eef1f8;
+    color: $accent !important;
+  }
+
+  &--peor {
+    background: #fff4e5;
+    color: #9a5b00 !important;
+  }
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+
+  > * {
+    min-width: 0;
+  }
+}
+
+.tarjeta {
+  min-width: 0;
+  background: $white;
+  border: 1px solid $line;
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+
+  h4 {
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+    color: $primary;
+  }
+}
+
+.tarjeta-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+
+  h4 {
+    margin: 0;
+  }
+
+  select {
+    border: 1px solid $line;
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.82rem;
+    background: $white;
+    color: $primary;
+  }
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+
+  th,
+  td {
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid $line;
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  th {
+    background: #f1f2f6;
+    color: $primary;
+    font-weight: 600;
+  }
+
+  .num {
+    text-align: right;
+  }
+
+  tr.vigente td {
+    background: #eef6ff;
+  }
+}
+
+.marca {
+  margin-left: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: $white;
+  background: $accent;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+}
+
+.muted {
+  color: $muted;
+  white-space: normal !important;
+}
+
+.ayuda {
+  margin: 0.6rem 0 0;
+  font-size: 0.75rem;
+  color: $muted;
+}
+
+.segmentos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.segmento {
+  min-width: 0;
+  background: $white;
+  border: 1px solid $line;
+  border-top: 4px solid var(--color-seg);
+  border-radius: 12px;
+  padding: 0.8rem 0.9rem;
+
+  p {
+    margin: 0.35rem 0 0.6rem;
+    font-size: 0.78rem;
+    color: $muted;
+  }
+
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  li {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+
+    span {
+      color: $muted;
+    }
+
+    b {
+      color: $primary;
+    }
+  }
+}
+
+.segmento-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  strong {
+    color: $primary;
+    font-size: 0.92rem;
+  }
+}
+
+.segmento-cantidad {
+  min-width: 2rem;
+  text-align: center;
+  font-weight: 700;
+  color: $white;
+  background: var(--color-seg);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: $white;
+  background: var(--color-seg);
+}
+
+// Colores de cada segmento (los mismos del gráfico de dona).
+.seg-vip {
+  --color-seg: #0f3460;
+}
+
+.seg-leal {
+  --color-seg: #16a085;
+}
+
+.seg-ocasional {
+  --color-seg: #f39c12;
+}
+
+.seg-riesgo {
+  --color-seg: #e94560;
+}
+
+@media (max-width: 900px) {
+  .grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .analitica {
+    padding: 0.6rem;
+  }
+
+  .acciones {
+    width: 100%;
+
+    select,
+    button {
+      flex: 1 1 auto;
+    }
+  }
+
+  .descarga {
+    width: 100%;
+
+    button {
+      flex: 1;
+    }
+  }
+
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kpi strong {
+    font-size: 1.1rem;
+  }
+}

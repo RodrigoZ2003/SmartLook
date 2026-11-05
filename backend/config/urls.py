@@ -11,6 +11,8 @@ urlpatterns = [
     path("api/sales/", include("apps.sales.urls")),
     path("api/innovation/", include("apps.innovation.urls")),
     path("api/bi/", include("apps.bi_reports.urls")),
+    # NUEVO (Fase 3 - CU09): analítica con Machine Learning.
+    path("api/analytics/", include("apps.analytics.urls")),
     # Documentación
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

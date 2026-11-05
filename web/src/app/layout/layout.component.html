@@ -1,9 +1,11 @@
 <!-- web/src/app/layout/layout.component.html -->
 <!-- MODIFICADO (Fase 3 - CU13): opción "Reportes" (reportes convencionales, los tres planes). -->
+<!-- MODIFICADO (Fase 3): logotipo cuadrado en la vista de celular (menú angosto). -->
+<!-- MODIFICADO (Fase 3 - CU09): opción "Analítica" (Machine Learning, SUPER_ADMIN y ADMIN_EMPRESA con plan con IA). -->
 <div class="layout">
   <aside class="sidebar" [class.sidebar--hidden]="!sidebarVisible">
     <div class="sidebar-inner">
-            <div class="logo">
+      <div class="logo">
         <img src="assets/images/logotipo-smartlook.jpeg" alt="SmartLook" class="logo-img">
         <span class="logo-texto">SmartLook</span>
       </div>
@@ -114,6 +116,15 @@
             <circle cx="15" cy="9.5" r="1"/>
           </svg>
           <span>Asistente</span>
+        </a>
+        <!-- NUEVO (Fase 3 - CU09): analítica con Machine Learning. -->
+        <a routerLink="/assistant-admin/analitica" class="nav-link" *ngIf="puedeVerAnalitica && planIncluyeIA">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 3v18h18"/>
+            <path d="m7 15 4-4 3 3 6-6"/>
+            <circle cx="20" cy="8" r="1"/>
+          </svg>
+          <span>Analítica</span>
         </a>
         <a routerLink="/inventory" class="nav-link" *ngIf="esPersonal">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
