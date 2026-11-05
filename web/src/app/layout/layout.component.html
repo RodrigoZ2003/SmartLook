@@ -2,6 +2,7 @@
 <!-- MODIFICADO (Fase 3 - CU13): opción "Reportes" (reportes convencionales, los tres planes). -->
 <!-- MODIFICADO (Fase 3): logotipo cuadrado en la vista de celular (menú angosto). -->
 <!-- MODIFICADO (Fase 3 - CU09): opción "Analítica" (Machine Learning, SUPER_ADMIN y ADMIN_EMPRESA con plan con IA). -->
+<!-- MODIFICADO (Fase 3 - CU07): opción "Traspasos" debajo de Inventario (SUPER_ADMIN, ADMIN_EMPRESA y encargado). -->
 <div class="layout">
   <aside class="sidebar" [class.sidebar--hidden]="!sidebarVisible">
     <div class="sidebar-inner">
@@ -133,6 +134,14 @@
             <path d="M12 12v9"/>
           </svg>
           <span>Inventario</span>
+        </a>
+        <!-- NUEVO (Fase 3 - CU07): traspasos entre sucursales. -->
+        <a routerLink="/inventory/traspasos" class="nav-link" *ngIf="puedeVerTraspasos">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 8h13l-3-3"/>
+            <path d="M20 16H7l3 3"/>
+          </svg>
+          <span>Traspasos</span>
         </a>
         <a routerLink="/store/sucursales" class="nav-link" *ngIf="esPersonal">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

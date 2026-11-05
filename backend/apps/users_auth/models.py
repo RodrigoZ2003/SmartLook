@@ -1,5 +1,6 @@
 # backend/apps/users_auth/models.py
 # MODIFICADO (Fase 2 - CU16): modelo Notificacion (centro de notificaciones).
+# MODIFICADO (Fase 3 - CU07): tipo de notificación TRASPASO (traspasos entre sucursales).
 import uuid
 from datetime import timedelta
 
@@ -7,7 +8,6 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
-
 
 class Rol(models.Model):
     id_rol = models.AutoField(primary_key=True)
@@ -25,7 +25,6 @@ class Rol(models.Model):
         """Representación legible del rol."""
         return self.nombre
 
-
 class Permiso(models.Model):
     id_permiso = models.AutoField(primary_key=True)
     nombre = models.CharField(max_length=100, unique=True)
@@ -42,7 +41,6 @@ class Permiso(models.Model):
         """Representación legible del permiso."""
         return self.nombre
 
-
 class RolPermiso(models.Model):
     id_rol = models.ForeignKey(Rol, on_delete=models.CASCADE, db_column="id_rol")
     id_permiso = models.ForeignKey(Permiso, on_delete=models.CASCADE, db_column="id_permiso")
@@ -53,7 +51,6 @@ class RolPermiso(models.Model):
         unique_together = ("id_rol", "id_permiso")
         verbose_name = "Rol-Permiso"
         verbose_name_plural = "Roles-Permisos"
-
 
 # NUEVO (2do parcial - SaaS multitenant): la Empresa es el TENANT.
 # Cada empresa contratante tiene sus propias sucursales, personal,
@@ -115,7 +112,6 @@ class Empresa(models.Model):
     def __str__(self):
         """Representación legible de la empresa."""
         return self.nombre
-
 
 class Usuario(models.Model):
     id_usuario = models.AutoField(primary_key=True)
@@ -183,7 +179,6 @@ class Usuario(models.Model):
         """Representación legible del usuario."""
         return f"{self.nombres} {self.apellidos}"
 
-
 class UsuarioRol(models.Model):
     id_usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, db_column="id_usuario")
     id_rol = models.ForeignKey(Rol, on_delete=models.CASCADE, db_column="id_rol")
@@ -194,7 +189,6 @@ class UsuarioRol(models.Model):
         unique_together = ("id_usuario", "id_rol")
         verbose_name = "Usuario-Rol"
         verbose_name_plural = "Usuarios-Roles"
-
 
 # NOTA (SaaS): el cliente es GLOBAL a la plataforma, no pertenece a una
 # empresa. Con una sola cuenta puede comprar y reservar en cualquier
@@ -216,7 +210,6 @@ class Cliente(models.Model):
     def __str__(self):
         """Representación legible del cliente."""
         return f"Cliente: {self.id_usuario.nombres} {self.id_usuario.apellidos}"
-
 
 class Bitacora(models.Model):
     id_bitacora = models.AutoField(primary_key=True)
@@ -261,7 +254,6 @@ class Bitacora(models.Model):
     def __str__(self):
         """Representación legible del evento de bitácora."""
         return f"{self.accion} - {self.tabla_afectada}"
-
 
 # NUEVO (SaaS - paso 5): planes que la plataforma ofrece a las empresas
 # (PLUS, PRO, ULTRA). Precios, periodos, límites y funcionalidades se
@@ -309,7 +301,6 @@ class PlanSuscripcion(models.Model):
     def __str__(self):
         """Representación legible del plan."""
         return self.nombre
-
 
 # NUEVO (SaaS - paso 5): suscripción de cada empresa (una por empresa).
 class Suscripcion(models.Model):
@@ -365,7 +356,6 @@ class Suscripcion(models.Model):
         """Representación legible de la suscripción."""
         return f"{self.id_empresa} - {self.id_plan} (vence {self.fecha_vencimiento})"
 
-
 # NUEVO (SaaS - paso 5): cada pago de renovación o cambio de plan. Se cobra
 # con Stripe en modo test (sin dinero real) y queda como historial.
 class PagoSuscripcion(models.Model):
@@ -415,7 +405,6 @@ class PagoSuscripcion(models.Model):
         """Representación legible del pago."""
         return f"Pago {self.id_pago} - {self.id_empresa} - {self.id_plan} ({self.estado})"
 
-
 # NUEVO (Fase 2 - CU16): centro de notificaciones (campana con lista, sin push).
 class Notificacion(models.Model):
     """Aviso para un usuario: reservas, pedidos, delivery, devoluciones, cambios y conflictos.
@@ -432,6 +421,7 @@ class Notificacion(models.Model):
         ("DEVOLUCION", "Devolución"),
         ("CAMBIO", "Cambio de prenda"),
         ("CONFLICTO", "Venta en conflicto"),
+        ("TRASPASO", "Traspaso entre sucursales"),
     ]
     id_notificacion = models.AutoField(primary_key=True)
     id_usuario = models.ForeignKey(

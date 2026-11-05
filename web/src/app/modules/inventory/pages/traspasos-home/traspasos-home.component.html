@@ -1,0 +1,260 @@
+<!-- web/src/app/modules/inventory/pages/traspasos-home/traspasos-home.component.html -->
+<!-- NUEVO (Fase 3 - CU07): traspasos de prendas entre sucursales. -->
+<div class="traspasos">
+
+  <header class="encabezado">
+    <div>
+      <h2>Traspasos entre sucursales</h2>
+      <p>Solicita prendas de otra sucursal de la empresa. Al aprobarse sale el stock del origen y al recibirse entra en el destino.</p>
+    </div>
+    <button type="button" class="btn-primario" (click)="abrirFormulario()" [disabled]="!opciones">+ Nuevo traspaso</button>
+  </header>
+
+  <div class="alerta alerta--ok" *ngIf="mensaje">{{ mensaje }}</div>
+  <div class="alerta alerta--error" *ngIf="error">{{ error }}</div>
+
+  <!-- ============================================================ SUGERENCIAS -->
+  <section class="bloque" *ngIf="opciones?.puede_aprobar && (sugerenciasDisponibles || opciones?.super_admin)">
+    <header class="bloque-header">
+      <div>
+        <h3>Sugerencias de la Analítica</h3>
+        <p>Prendas cuya demanda prevista para las próximas 4 semanas supera el stock de una sucursal, y otra sucursal tiene de sobra.</p>
+      </div>
+      <select *ngIf="opciones?.super_admin" [(ngModel)]="empresaSugerencias" (ngModelChange)="cargarSugerencias()" aria-label="Empresa">
+        <option *ngFor="let e of empresas" [ngValue]="e.id">{{ e.nombre }}</option>
+      </select>
+    </header>
+    <p class="vacio" *ngIf="cargandoSugerencias">Calculando sugerencias...</p>
+    <p class="vacio" *ngIf="!cargandoSugerencias && sugerenciasDisponibles && sugerencias.length === 0">
+      No hay traspasos sugeridos: el stock alcanza para la demanda prevista.
+    </p>
+    <p class="vacio" *ngIf="!cargandoSugerencias && !sugerenciasDisponibles">
+      Esta empresa no tiene la Analítica disponible (plan sin IA o modelos sin entrenar).
+    </p>
+    <div class="sugerencias" *ngIf="sugerencias.length > 0">
+      <div class="sugerencia" *ngFor="let s of sugerencias">
+        <strong>{{ s.producto }}</strong>
+        <span class="ruta">{{ s.sucursal_origen }} <b>→</b> {{ s.sucursal_destino }}</span>
+        <ul>
+          <li><span>Llevar</span><b>{{ s.cantidad_sugerida }} u.</b></li>
+          <li><span>Demanda prevista en destino</span><b>{{ s.demanda_prevista }}</b></li>
+          <li><span>Stock en destino</span><b>{{ s.stock_destino }}</b></li>
+          <li><span>Stock en origen</span><b>{{ s.stock_origen }}</b></li>
+        </ul>
+        <button type="button" class="btn-secundario" (click)="usarSugerencia(s)">Crear solicitud</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ LISTA -->
+  <section class="bloque">
+    <nav class="pestanas">
+      <button type="button" *ngFor="let p of pestanas" [class.activa]="pestana === p.clave" (click)="pestana = p.clave">
+        {{ p.texto }} <span class="contador">{{ contar(p.clave) }}</span>
+      </button>
+    </nav>
+
+    <p class="vacio" *ngIf="cargando">Cargando traspasos...</p>
+    <div class="table-wrap" *ngIf="!cargando && traspasosPestana.length > 0; else sinTraspasos">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Fecha</th>
+            <th *ngIf="opciones?.super_admin">Empresa</th>
+            <th>Origen → Destino</th>
+            <th class="num">Prendas</th>
+            <th class="num">Unidades</th>
+            <th>Solicitado por</th>
+            <th>Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let t of traspasosPestana" [class.activa]="seleccionado?.id === t.id">
+            <td>{{ t.id }}</td>
+            <td>{{ t.fecha_solicitud | date:'dd/MM/yyyy HH:mm' }}</td>
+            <td *ngIf="opciones?.super_admin">{{ t.empresa.nombre }}</td>
+            <td>{{ t.origen.nombre }} <b>→</b> {{ t.destino.nombre }}
+              <span class="marca" *ngIf="t.desde_sugerencia" title="Creado desde una sugerencia de la Analítica">ML</span>
+            </td>
+            <td class="num">{{ t.prendas }}</td>
+            <td class="num">{{ t.unidades }}</td>
+            <td>{{ t.solicitado_por }}</td>
+            <td><span [class]="claseEstado(t.estado)">{{ t.estado_display }}</span></td>
+            <td><button type="button" class="btn-link" (click)="ver(t)">Ver</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <ng-template #sinTraspasos>
+      <p class="vacio" *ngIf="!cargando">No hay traspasos en esta pestaña.</p>
+    </ng-template>
+  </section>
+
+  <!-- ============================================================ DETALLE -->
+  <div class="fondo" *ngIf="seleccionado" (click)="cerrarDetalle()"></div>
+  <aside class="panel" *ngIf="seleccionado as t" role="dialog" aria-label="Detalle del traspaso">
+    <header class="panel-header">
+      <div>
+        <h3>Traspaso #{{ t.id }}</h3>
+        <span [class]="claseEstado(t.estado)">{{ t.estado_display }}</span>
+      </div>
+      <button type="button" class="cerrar" (click)="cerrarDetalle()" aria-label="Cerrar">&times;</button>
+    </header>
+
+    <p class="ruta-grande">{{ t.origen.nombre }} <b>→</b> {{ t.destino.nombre }}</p>
+    <p class="observacion" *ngIf="t.observacion">{{ t.observacion }}</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Prenda</th>
+            <th>Talla</th>
+            <th>Color</th>
+            <th class="num">Cantidad</th>
+            <th class="num" *ngIf="t.estado === 'SOLICITADO'">Stock en origen</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let d of t.detalles">
+            <td>{{ d.prenda }}</td>
+            <td>{{ d.talla }}</td>
+            <td>{{ d.color }}</td>
+            <td class="num">{{ d.cantidad }}</td>
+            <td class="num" *ngIf="t.estado === 'SOLICITADO'" [class.falta]="d.stock_origen < d.cantidad">{{ d.stock_origen }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ol class="historial">
+      <li>Solicitado por <b>{{ t.solicitado_por }}</b> el {{ t.fecha_solicitud | date:'dd/MM/yyyy HH:mm' }}</li>
+      <li *ngIf="t.fecha_aprobacion">Aprobado por <b>{{ t.aprobado_por }}</b> el {{ t.fecha_aprobacion | date:'dd/MM/yyyy HH:mm' }} (salió el stock del origen)</li>
+      <li *ngIf="t.fecha_recepcion">Recibido por <b>{{ t.recibido_por }}</b> el {{ t.fecha_recepcion | date:'dd/MM/yyyy HH:mm' }} (entró el stock al destino)</li>
+      <li *ngIf="t.fecha_rechazo">Rechazado por <b>{{ t.rechazado_por }}</b> el {{ t.fecha_rechazo | date:'dd/MM/yyyy HH:mm' }}. Motivo: {{ t.motivo_rechazo }}</li>
+      <li *ngIf="t.fecha_cancelacion">Cancelado por <b>{{ t.cancelado_por }}</b> el {{ t.fecha_cancelacion | date:'dd/MM/yyyy HH:mm' }}</li>
+    </ol>
+
+    <div class="rechazo" *ngIf="mostrarRechazo">
+      <label for="motivo">Motivo del rechazo</label>
+      <textarea id="motivo" rows="3" [(ngModel)]="motivoRechazo" maxlength="255"></textarea>
+    </div>
+
+    <div class="acciones">
+      <button type="button" class="btn-primario" *ngIf="t.acciones.aprobar && !mostrarRechazo" (click)="ejecutar('aprobar')" [disabled]="procesando !== null">
+        {{ procesando === 'aprobar' ? 'Aprobando...' : 'Aprobar' }}
+      </button>
+      <button type="button" class="btn-primario" *ngIf="t.acciones.recibir" (click)="ejecutar('recibir')" [disabled]="procesando !== null">
+        {{ procesando === 'recibir' ? 'Registrando...' : 'Marcar como recibido' }}
+      </button>
+      <button type="button" class="btn-peligro" *ngIf="t.acciones.rechazar && !mostrarRechazo" (click)="mostrarRechazo = true">Rechazar</button>
+      <button type="button" class="btn-peligro" *ngIf="mostrarRechazo" (click)="ejecutar('rechazar')" [disabled]="procesando !== null">
+        {{ procesando === 'rechazar' ? 'Rechazando...' : 'Confirmar rechazo' }}
+      </button>
+      <button type="button" class="btn-secundario" *ngIf="mostrarRechazo" (click)="mostrarRechazo = false">Volver</button>
+      <button type="button" class="btn-secundario" *ngIf="t.acciones.cancelar && !mostrarRechazo" (click)="ejecutar('cancelar')" [disabled]="procesando !== null">
+        {{ procesando === 'cancelar' ? 'Cancelando...' : 'Cancelar solicitud' }}
+      </button>
+    </div>
+  </aside>
+
+  <!-- ============================================================ FORMULARIO -->
+  <div class="fondo" *ngIf="formularioAbierto" (click)="cerrarFormulario()"></div>
+  <aside class="panel" *ngIf="formularioAbierto && opciones" role="dialog" aria-label="Nuevo traspaso">
+    <header class="panel-header">
+      <div>
+        <h3>Nuevo traspaso</h3>
+        <span class="marca" *ngIf="desdeSugerencia">Desde sugerencia de la Analítica</span>
+      </div>
+      <button type="button" class="cerrar" (click)="cerrarFormulario()" aria-label="Cerrar">&times;</button>
+    </header>
+
+    <div class="form">
+      <label class="campo" *ngIf="empresas.length > 1">
+        <span>Empresa</span>
+        <select [(ngModel)]="empresaForm" (ngModelChange)="cambiarEmpresaForm()" [disabled]="!!opciones.destino_fijo">
+          <option [ngValue]="null">Elige la empresa</option>
+          <option *ngFor="let e of empresas" [ngValue]="e.id">{{ e.nombre }}</option>
+        </select>
+      </label>
+
+      <div class="fila">
+        <label class="campo">
+          <span>Sucursal de origen (envía)</span>
+          <select [(ngModel)]="origenForm" (ngModelChange)="cambiarOrigen()" [disabled]="empresas.length > 1 && !empresaForm">
+            <option [ngValue]="null">Elige el origen</option>
+            <option *ngFor="let s of origenesPosibles" [ngValue]="s.id">{{ s.nombre }}</option>
+          </select>
+        </label>
+        <label class="campo">
+          <span>Sucursal de destino (recibe)</span>
+          <select [(ngModel)]="destinoForm" [disabled]="!!opciones.destino_fijo || (empresas.length > 1 && !empresaForm)">
+            <option [ngValue]="null">Elige el destino</option>
+            <option *ngFor="let s of destinosPosibles" [ngValue]="s.id">{{ s.nombre }}</option>
+          </select>
+        </label>
+      </div>
+      <p class="ayuda" *ngIf="opciones.destino_fijo">Como encargado, los traspasos que pides llegan a tu sucursal.</p>
+
+      <div class="agregar" *ngIf="origenForm">
+        <p class="vacio" *ngIf="cargandoStock">Cargando stock del origen...</p>
+        <ng-container *ngIf="!cargandoStock">
+          <label class="campo crece">
+            <span>Prenda (talla y color) con stock en origen</span>
+            <select [(ngModel)]="varianteElegida">
+              <option [ngValue]="null">{{ prendasDisponibles.length ? 'Elige una prenda' : 'Sin más prendas con stock' }}</option>
+              <option *ngFor="let p of prendasDisponibles" [ngValue]="p.id_variante">
+                {{ p.prenda }} - {{ p.talla }} - {{ p.color }} (stock {{ p.stock }})
+              </option>
+            </select>
+          </label>
+          <label class="campo corto">
+            <span>Cantidad</span>
+            <input type="number" min="1" [max]="stockElegido || 1" [(ngModel)]="cantidadElegida">
+          </label>
+          <button type="button" class="btn-secundario" (click)="agregarLinea()" [disabled]="!varianteElegida">Agregar</button>
+        </ng-container>
+      </div>
+
+      <div class="table-wrap" *ngIf="lineas.length > 0">
+        <table>
+          <thead>
+            <tr>
+              <th>Prenda</th>
+              <th class="num">Stock en origen</th>
+              <th class="num">Cantidad</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let l of lineas; let i = index">
+              <td>{{ l.prenda }}</td>
+              <td class="num">{{ l.stock }}</td>
+              <td class="num">
+                <input type="number" class="cantidad" min="1" [max]="l.stock" [(ngModel)]="l.cantidad" [class.invalida]="lineaInvalida(l)">
+              </td>
+              <td><button type="button" class="btn-link" (click)="quitarLinea(i)">Quitar</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="ayuda" *ngIf="lineas.length > 0">Total: <b>{{ totalUnidades }}</b> unidad(es) en {{ lineas.length }} prenda(s).</p>
+
+      <label class="campo">
+        <span>Observación (opcional)</span>
+        <textarea rows="2" maxlength="255" [(ngModel)]="observacionForm" placeholder="Por qué se necesita"></textarea>
+      </label>
+
+      <p class="error" *ngIf="errorForm">{{ errorForm }}</p>
+
+      <div class="acciones">
+        <button type="button" class="btn-primario" (click)="enviar()" [disabled]="enviando || !lineas.length">
+          {{ enviando ? 'Enviando...' : 'Solicitar traspaso' }}
+        </button>
+        <button type="button" class="btn-secundario" (click)="cerrarFormulario()">Cancelar</button>
+      </div>
+    </div>
+  </aside>
+</div>
