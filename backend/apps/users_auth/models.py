@@ -1,6 +1,7 @@
 # backend/apps/users_auth/models.py
 # MODIFICADO (Fase 2 - CU16): modelo Notificacion (centro de notificaciones).
 # MODIFICADO (Fase 3 - CU07): tipo de notificación TRASPASO (traspasos entre sucursales).
+# MODIFICADO (Fase 3 - CU18): tipo de notificación FIDELIDAD (descuento por fidelidad).
 import uuid
 from datetime import timedelta
 
@@ -422,6 +423,8 @@ class Notificacion(models.Model):
         ("CAMBIO", "Cambio de prenda"),
         ("CONFLICTO", "Venta en conflicto"),
         ("TRASPASO", "Traspaso entre sucursales"),
+        # NUEVO (Fase 3 - CU18): el cliente ganó el descuento por fidelidad.
+        ("FIDELIDAD", "Descuento por fidelidad"),
     ]
     id_notificacion = models.AutoField(primary_key=True)
     id_usuario = models.ForeignKey(

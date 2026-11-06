@@ -1,5 +1,6 @@
 // web/src/app/modules/clients/pages/client-list/client-list.component.scss
 // MODIFICADO (Fase 3 - CU04): lista de clientes por empresa y panel de perfil.
+// MODIFICADO (Fase 3 - CU18): progreso del descuento por fidelidad en el perfil.
 
 $primary: #1a1a2e;
 $accent: #0f3460;
@@ -334,6 +335,60 @@ table {
 
   &--cambio {
     color: #d35400;
+  }
+}
+
+.fidelidad {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.fidelidad-fila {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  background: $fondo;
+  border: 1px solid $line;
+  border-radius: 10px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.82rem;
+  color: $primary;
+
+  .detalle {
+    display: inline;
+  }
+}
+
+.fidelidad-empresa {
+  font-weight: 600;
+}
+
+.fid {
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+
+  &--en_progreso {
+    background: #eef0f4;
+    color: $accent;
+  }
+
+  &--disponible {
+    background: #e9f7ef;
+    color: #1e6b3a;
+  }
+
+  &--usado {
+    background: #e8f0fe;
+    color: $accent;
+  }
+
+  &--vencido {
+    background: #fdecea;
+    color: #b3261e;
   }
 }
 

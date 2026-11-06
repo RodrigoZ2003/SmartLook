@@ -1,5 +1,6 @@
 <!-- web/src/app/modules/clients/pages/client-list/client-list.component.html -->
 <!-- MODIFICADO (Fase 3 - CU04): perfil de clientes por empresa. -->
+<!-- MODIFICADO (Fase 3 - CU18): progreso del descuento por fidelidad del mes en el perfil. -->
 <div class="clientes">
 
   <header class="encabezado">
@@ -90,6 +91,18 @@
         <div class="kpi"><span>Sucursal favorita</span><strong class="texto">{{ p.resumen.sucursal_favorita || '-' }}</strong></div>
         <div class="kpi"><span>Reservas · Devoluciones · Cambios</span><strong>{{ p.resumen.reservas }} · {{ p.resumen.devoluciones }} · {{ p.resumen.cambios }}</strong></div>
       </div>
+
+      <section class="seccion" *ngIf="fidelidad.length > 0">
+        <h4>Descuento por fidelidad <small>(este mes)</small></h4>
+        <div class="fidelidad">
+          <div class="fidelidad-fila" *ngFor="let f of fidelidad">
+            <span class="fidelidad-empresa" *ngIf="p.super_admin">{{ f.empresa }}</span>
+            <span>{{ f.compras }} de {{ f.requeridas }} compras</span>
+            <span [class]="claseFidelidad(f.estado)">{{ f.estado_display }}</span>
+            <span class="detalle" *ngIf="f.uso">{{ f.uso }} · −Bs {{ f.monto_descuento | number:'1.2-2' }}</span>
+          </div>
+        </div>
+      </section>
 
       <section class="seccion" *ngIf="p.preferencias.unidades > 0">
         <h4>Preferencias <small>({{ p.preferencias.unidades }} prendas compradas)</small></h4>

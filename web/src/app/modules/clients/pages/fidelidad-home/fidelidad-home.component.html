@@ -1,0 +1,129 @@
+<!-- web/src/app/modules/clients/pages/fidelidad-home/fidelidad-home.component.html -->
+<!-- NUEVO (Fase 3 - CU18): descuento por fidelidad (regla y monitoreo del mes). -->
+<div class="fidelidad">
+
+  <header class="encabezado">
+    <div>
+      <h2>Descuento por fidelidad</h2>
+      <p>
+        {{ superAdmin ? 'Regla de la plataforma y clientes de todas las empresas.' : 'Clientes de tu empresa y su progreso del mes.' }}
+        El conteo se reinicia el día 1 de cada mes.
+      </p>
+    </div>
+    <label class="mes">
+      <span>Mes</span>
+      <input type="month" [(ngModel)]="mes" (change)="cargar()">
+    </label>
+  </header>
+
+  <div class="alerta alerta--error" *ngIf="error">{{ error }}</div>
+  <p class="vacio" *ngIf="loading && !datos">Cargando...</p>
+
+  <ng-container *ngIf="datos as d">
+
+    <!-- ============================================================ REGLA -->
+    <section class="bloque">
+      <div class="bloque-header">
+        <div>
+          <h3>Regla vigente</h3>
+          <p *ngIf="d.regla.activa">
+            Al llegar a <b>{{ d.regla.compras_requeridas }} compras</b> en el mes en una empresa, la siguiente
+            compra sin reservas tiene <b>{{ d.regla.porcentaje }}% de descuento</b> en las prendas (el envío se cobra
+            completo). Una vez por mes; la compra con descuento no admite reserva, devolución ni cambio.
+          </p>
+          <p *ngIf="!d.regla.activa">El descuento por fidelidad está <b>desactivado</b>.</p>
+          <p class="sub" *ngIf="d.regla.actualizado_por">
+            Última modificación: {{ d.regla.actualizado_por }} el {{ d.regla.fecha_actualizacion | date:'dd/MM/yyyy HH:mm' }}
+          </p>
+          <p class="sub" *ngIf="!superAdmin">La regla la define el administrador de la plataforma; el descuento lo asume tu empresa.</p>
+        </div>
+      </div>
+
+      <form class="regla" *ngIf="superAdmin" (ngSubmit)="guardarRegla()">
+        <label>
+          <span>Compras en el mes</span>
+          <input type="number" name="compras" min="1" max="50" step="1" [(ngModel)]="compras" required>
+        </label>
+        <label>
+          <span>Descuento (%)</span>
+          <input type="number" name="porcentaje" min="1" max="100" step="0.5" [(ngModel)]="porcentaje" required>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="activa" [(ngModel)]="activa">
+          <span>Activa</span>
+        </label>
+        <button type="submit" class="btn-primario" [disabled]="guardando">
+          {{ guardando ? 'Guardando...' : 'Guardar regla' }}
+        </button>
+      </form>
+      <p class="error" *ngIf="errorRegla">{{ errorRegla }}</p>
+      <div class="alerta alerta--ok" *ngIf="mensaje">{{ mensaje }}</div>
+    </section>
+
+    <!-- ============================================================ RESUMEN -->
+    <div class="kpis">
+      <div class="kpi"><span>Clientes con compras</span><strong>{{ d.resumen.clientes }}</strong></div>
+      <div class="kpi"><span>Ganaron el descuento</span><strong>{{ d.resumen.ganaron }}</strong></div>
+      <div class="kpi" *ngIf="mesActual"><span>Por usar</span><strong>{{ d.resumen.por_usar }}</strong></div>
+      <div class="kpi"><span>Usados</span><strong>{{ d.resumen.usados }}</strong></div>
+      <div class="kpi" *ngIf="!mesActual"><span>No lo usaron</span><strong>{{ d.resumen.vencidos }}</strong></div>
+      <div class="kpi">
+        <span>{{ superAdmin ? 'Descuento asumido por las empresas' : 'Descuento asumido por tu empresa' }}</span>
+        <strong>Bs {{ d.resumen.costo_descuentos | number:'1.2-2' }}</strong>
+      </div>
+    </div>
+
+    <!-- ============================================================ CLIENTES -->
+    <section class="bloque">
+      <div class="bloque-header">
+        <div>
+          <h3>Clientes del mes</h3>
+          <p>{{ mesActual ? 'El descuento disponible vence el ' + (d.vence | date:'dd/MM/yyyy') + '.' : 'Mes cerrado.' }}</p>
+        </div>
+        <input type="text" class="buscar" placeholder="Buscar cliente, correo o empresa..." [(ngModel)]="busqueda" aria-label="Buscar cliente">
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th *ngIf="superAdmin">Empresa</th>
+              <th>Progreso</th>
+              <th>Estado</th>
+              <th>Uso</th>
+              <th class="num">Descuento</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let f of filas">
+              <td>
+                <span class="nombre">{{ f.cliente }}</span>
+                <span class="correo">{{ f.correo }}</span>
+              </td>
+              <td *ngIf="superAdmin">{{ f.empresa }}</td>
+              <td class="progreso">
+                <div class="barra"><div class="relleno" [style.width.%]="avance(f)"></div></div>
+                <small>{{ f.compras }} de {{ f.requeridas }} compras</small>
+              </td>
+              <td><span [class]="claseEstado(f.estado)">{{ f.estado_display }}</span></td>
+              <td>
+                <ng-container *ngIf="f.uso; else sinUso">
+                  {{ f.uso }}
+                  <span class="correo">{{ f.fecha_uso | date:'dd/MM/yyyy HH:mm' }} · {{ f.porcentaje_usado }}%</span>
+                </ng-container>
+                <ng-template #sinUso><span class="muted">-</span></ng-template>
+              </td>
+              <td class="num">{{ f.monto_descuento ? ('Bs ' + (f.monto_descuento | number:'1.2-2')) : '-' }}</td>
+            </tr>
+            <tr *ngIf="filas.length === 0">
+              <td [attr.colspan]="superAdmin ? 6 : 5" class="muted">
+                {{ d.clientes.length === 0 ? 'No hay clientes con compras en este mes.' : 'Ningún cliente coincide con la búsqueda.' }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </ng-container>
+</div>

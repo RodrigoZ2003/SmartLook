@@ -1,0 +1,351 @@
+// web/src/app/modules/clients/pages/fidelidad-home/fidelidad-home.component.scss
+// NUEVO (Fase 3 - CU18): estilos de Clientes > Fidelidad.
+
+$primary: #1a1a2e;
+$accent: #0f3460;
+$white: #ffffff;
+$line: #e2e5ec;
+$muted: #6b6459;
+$fondo: #f6f7fb;
+$peligro: #b3261e;
+
+.fidelidad {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 1rem;
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.encabezado {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  h2 {
+    margin: 0;
+    color: $primary;
+    font-size: 1.3rem;
+  }
+
+  p {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
+    color: $muted;
+    max-width: 640px;
+  }
+}
+
+.mes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+
+  span {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: $primary;
+  }
+
+  input {
+    border: 1px solid $line;
+    border-radius: 8px;
+    padding: 0.45rem 0.6rem;
+    font-size: 0.85rem;
+    background: $white;
+    color: $primary;
+  }
+}
+
+.alerta {
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+
+  &--ok {
+    background: #e9f7ef;
+    color: #1e6b3a;
+    border: 1px solid #bfe5cd;
+  }
+
+  &--error {
+    background: #fdecea;
+    color: $peligro;
+    border: 1px solid #f5c2bd;
+  }
+}
+
+.vacio,
+.muted {
+  color: $muted;
+  font-size: 0.85rem;
+}
+
+.error {
+  margin: 0;
+  font-size: 0.82rem;
+  color: $peligro;
+}
+
+.bloque {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  background: $fondo;
+  border: 1px solid $line;
+  border-radius: 16px;
+  padding: 1rem 1.1rem;
+  min-width: 0;
+}
+
+.bloque-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  h3 {
+    margin: 0;
+    color: $primary;
+    font-size: 1.05rem;
+  }
+
+  p {
+    margin: 0.3rem 0 0;
+    font-size: 0.85rem;
+    color: $primary;
+    max-width: 760px;
+  }
+
+  .sub {
+    color: $muted;
+    font-size: 0.78rem;
+  }
+}
+
+.regla {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+
+    span {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: $primary;
+    }
+
+    input[type='number'] {
+      width: 130px;
+      border: 1px solid $line;
+      border-radius: 8px;
+      padding: 0.5rem 0.6rem;
+      font-size: 0.9rem;
+      background: $white;
+      color: $primary;
+    }
+  }
+
+  .check {
+    flex-direction: row;
+    align-items: center;
+    padding-bottom: 0.55rem;
+
+    input {
+      width: 18px;
+      height: 18px;
+    }
+  }
+}
+
+.btn-primario {
+  border: none;
+  border-radius: 10px;
+  padding: 0.6rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: $primary;
+  color: $white;
+
+  &:hover:not(:disabled) {
+    background: $accent;
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+}
+
+.kpi {
+  min-width: 0;
+  background: $white;
+  border: 1px solid $line;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+
+  span {
+    font-size: 0.75rem;
+    color: $muted;
+  }
+
+  strong {
+    font-size: 1.25rem;
+    color: $accent;
+  }
+}
+
+.buscar {
+  flex: 1 1 240px;
+  max-width: 320px;
+  border: 1px solid $line;
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.85rem;
+  background: $white;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  background: $white;
+  border: 1px solid $line;
+  border-radius: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+
+  th,
+  td {
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid $line;
+    text-align: left;
+    vertical-align: middle;
+  }
+
+  th {
+    background: #f1f2f6;
+    color: $primary;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .num {
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+.nombre {
+  display: block;
+  font-weight: 600;
+  color: $primary;
+}
+
+.correo {
+  display: block;
+  font-size: 0.74rem;
+  color: $muted;
+}
+
+.progreso {
+  min-width: 140px;
+
+  small {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.74rem;
+    color: $muted;
+  }
+}
+
+.barra {
+  height: 8px;
+  border-radius: 999px;
+  background: #eef0f4;
+  overflow: hidden;
+}
+
+.relleno {
+  height: 100%;
+  border-radius: 999px;
+  background: #16a085;
+}
+
+.estado {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.12rem 0.6rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+
+  &--en_progreso {
+    background: #eef0f4;
+    color: $accent;
+  }
+
+  &--disponible {
+    background: #e9f7ef;
+    color: #1e6b3a;
+  }
+
+  &--usado {
+    background: #e8f0fe;
+    color: $accent;
+  }
+
+  &--vencido {
+    background: #fdecea;
+    color: $peligro;
+  }
+}
+
+@media (max-width: 600px) {
+  .fidelidad {
+    padding: 0.6rem;
+  }
+
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .regla {
+    label input[type='number'] {
+      width: 100%;
+    }
+
+    label:not(.check) {
+      flex: 1 1 120px;
+    }
+
+    .btn-primario {
+      width: 100%;
+    }
+  }
+
+  .buscar {
+    max-width: none;
+  }
+}

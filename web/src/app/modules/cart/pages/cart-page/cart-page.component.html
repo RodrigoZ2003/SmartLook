@@ -1,6 +1,8 @@
 <!-- MODIFICADO (Fase 2 - reservas con anticipo): las prendas de una reserva
      pagada muestran su precio reservado, no se quitan (se cancela la reserva) y
      el total descuenta lo pagado al reservar (se cobra solo el saldo). -->
+<!-- MODIFICADO (Fase 3 - CU18): descuento por fidelidad (línea en el resumen y
+     aviso del progreso del mes en la tienda elegida). -->
 <div class="cart-container">
   <h2>Mi Carrito</h2>
   <div *ngIf="loading">Cargando carrito...</div>
@@ -68,9 +70,20 @@
         <span>- Bs {{ carrito.pagado_reservas | number:'1.2-2' }}</span>
       </div>
     </ng-container>
+    <!-- NUEVO (CU18): descuento por fidelidad -->
+    <ng-container *ngIf="descuentoFidelidad > 0">
+      <div class="cart-summary cart-summary--envio">
+        <span>Precio de las prendas</span>
+        <span>Bs {{ carrito.total | number:'1.2-2' }}</span>
+      </div>
+      <div class="cart-summary cart-summary--envio cart-summary--descuento">
+        <span>Descuento por fidelidad ({{ fidelidad?.porcentaje }}%)</span>
+        <span>- Bs {{ descuentoFidelidad | number:'1.2-2' }}</span>
+      </div>
+    </ng-container>
     <div class="cart-summary">
       <span>{{ tipoEntrega === 'DELIVERY' ? 'Subtotal' : (tienePagoReservas ? 'Saldo a pagar' : 'Total') }}</span>
-      <span class="total-value">Bs {{ carrito.total | number:'1.2-2' }}</span>
+      <span class="total-value">Bs {{ totalPrendas | number:'1.2-2' }}</span>
     </div>
     <div class="cart-summary cart-summary--envio" *ngIf="tipoEntrega === 'DELIVERY' && cotizacion">
       <span>Envío ({{ cotizacion.distancia_km }} km)</span>
@@ -79,6 +92,20 @@
     <div class="cart-summary" *ngIf="tipoEntrega === 'DELIVERY' && cotizacion">
       <span>Total a pagar</span>
       <span class="total-value">Bs {{ totalAPagar | number:'1.2-2' }}</span>
+    </div>
+    <!-- NUEVO (CU18): progreso del descuento por fidelidad en esta tienda -->
+    <div class="fidelidad-aviso" *ngIf="fidelidad && reglaFidelidadActiva" [class.fidelidad-aviso--lista]="descuentoFidelidad > 0">
+      <ng-container [ngSwitch]="fidelidad.estado">
+        <span *ngSwitchCase="'DISPONIBLE'">
+          <ng-container *ngIf="!tieneReservas">¡Tienes {{ fidelidad.porcentaje }}% de descuento por fidelidad en esta compra! El envío se cobra completo. Esta compra no admite devolución ni cambio.</ng-container>
+          <ng-container *ngIf="tieneReservas">Tienes {{ fidelidad.porcentaje }}% de descuento por fidelidad, pero tu carrito tiene prendas reservadas: se aplicará en tu próxima compra sin reservas de este mes.</ng-container>
+        </span>
+        <span *ngSwitchCase="'USADO'">Ya usaste tu descuento por fidelidad de este mes en {{ carrito.empresa_nombre }} ({{ fidelidad.uso }}).</span>
+        <span *ngSwitchDefault>
+          Llevas {{ fidelidad.compras }} de {{ fidelidad.requeridas }} compras este mes en {{ carrito.empresa_nombre }}.
+          Al llegar a {{ fidelidad.requeridas }}, tu siguiente compra tendrá {{ fidelidad.porcentaje }}% de descuento.
+        </span>
+      </ng-container>
     </div>
     <!-- CU21: retiro en sucursal o delivery -->
     <div class="delivery-options" *ngIf="!mostrarFormularioPago">

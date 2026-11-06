@@ -1,3 +1,4 @@
+<!-- MODIFICADO (Fase 3 - CU18): descuento por fidelidad (consulta por correo, línea de descuento y comprobante). -->
 <div class="pos-container">
   <div class="pos-head">
     <h2>Punto de Venta</h2>
@@ -61,6 +62,10 @@
     <!-- NUEVO (Fase 2): lo pagado al reservar no se vuelve a cobrar -->
     <p class="receipt-pagado" *ngIf="tienePagado(ventaConfirmada)">
       Pagado al reservar: - Bs {{ ventaConfirmada.pagado_reservas | number:'1.2-2' }}
+    </p>
+    <!-- NUEVO (CU18): descuento por fidelidad aplicado -->
+    <p class="receipt-pagado" *ngIf="descuentoAplicado > 0">
+      Descuento por fidelidad: - Bs {{ descuentoAplicado | number:'1.2-2' }} (esta compra no admite devolución ni cambio)
     </p>
     <p class="receipt-total">Total cobrado: Bs {{ ventaConfirmada.total }}</p>
     <button type="button" class="btn btn-accent" (click)="nuevaVenta()">Nueva venta</button>
@@ -150,9 +155,13 @@
         <span class="item-subtotal">Bs {{ item.precio * item.cantidad }}</span>
         <button type="button" class="btn-link btn-danger" (click)="quitar(item)">Quitar</button>
       </div>
+      <!-- NUEVO (CU18): descuento por fidelidad -->
+      <p class="receipt-pagado" *ngIf="descuentoFidelidad > 0">
+        Descuento por fidelidad ({{ fidelidadPos?.porcentaje }}%): - Bs {{ descuentoFidelidad | number:'1.2-2' }}
+      </p>
       <div class="sale-total">
         <span>Total</span>
-        <span class="total-value">Bs {{ total | number:'1.2-2' }}</span>
+        <span class="total-value">Bs {{ totalACobrar | number:'1.2-2' }}</span>
       </div>
       <div class="form-group">
         <label for="sucursal">Sucursal</label>
@@ -191,8 +200,25 @@
           [(ngModel)]="correoCliente"
           placeholder="cliente@correo.com"
           autocomplete="off"
+          (blur)="consultarFidelidad()"
+          (keyup.enter)="consultarFidelidad()"
         />
-        <small class="ayuda-neutra" *ngIf="!enLinea">Sin conexión se valida al sincronizar; si no existe, la venta queda sin cliente.</small>
+        <small class="ayuda-neutra" *ngIf="!enLinea">Sin conexión se valida al sincronizar; si no existe, la venta queda sin cliente. Sin conexión no se aplica el descuento por fidelidad.</small>
+        <!-- NUEVO (CU18): descuento por fidelidad del cliente -->
+        <small class="ayuda-neutra" *ngIf="consultandoFidelidad">Consultando el descuento por fidelidad...</small>
+        <small class="ayuda-neutra" *ngIf="errorFidelidad" style="color: #b3261e;">{{ errorFidelidad }}</small>
+        <ng-container *ngIf="fidelidadPos && enLinea && fidelidadPos.activa && !consultandoFidelidad">
+          <small class="ayuda-neutra" *ngIf="fidelidadPos.disponible && reservasEnVenta.length === 0" style="color: #1b5e20; font-weight: 600;">
+            {{ fidelidadPos.cliente }} tiene {{ fidelidadPos.porcentaje }}% de descuento por fidelidad: ya está aplicado en el total.
+          </small>
+          <small class="ayuda-neutra" *ngIf="fidelidadPos.disponible && reservasEnVenta.length > 0">
+            {{ fidelidadPos.cliente }} tiene {{ fidelidadPos.porcentaje }}% de descuento, pero la venta lleva una reserva: se aplicará en su próxima compra sin reservas.
+          </small>
+          <small class="ayuda-neutra" *ngIf="fidelidadPos.usado">{{ fidelidadPos.cliente }} ya usó su descuento por fidelidad de este mes.</small>
+          <small class="ayuda-neutra" *ngIf="!fidelidadPos.disponible && !fidelidadPos.usado">
+            {{ fidelidadPos.cliente }}: {{ fidelidadPos.compras }} de {{ fidelidadPos.requeridas }} compras este mes (esta venta suma una más).
+          </small>
+        </ng-container>
       </div>
       <div class="form-group">
         <label for="metodoPago">Método de pago</label>

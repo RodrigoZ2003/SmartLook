@@ -275,6 +275,26 @@
   font-size: 0.9rem;
 }
 
+// NUEVO (Fase 3 - CU18): descuento por fidelidad
+.cart-summary--descuento {
+  color: #1e6b3a;
+}
+
+.fidelidad-aviso {
+  margin: 0.5rem 0 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background: #eef3fb;
+  color: #0f3460;
+  font-size: 0.9rem;
+
+  &--lista {
+    background: #e8f5e9;
+    color: #1b5e20;
+    font-weight: 600;
+  }
+}
+
 // SaaS: pestañas de tiendas (un carrito por tienda)
 .store-tabs {
   display: flex;

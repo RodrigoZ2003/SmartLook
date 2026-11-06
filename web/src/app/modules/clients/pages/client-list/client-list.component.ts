@@ -8,7 +8,10 @@
 //     (prendas, categorías, tallas y colores), segmento de la Analítica (ML) e
 //     historial (pedidos web, compras en tienda, reservas, devoluciones y cambios).
 // Solo lectura: los clientes se registran solos.
+// MODIFICADO (Fase 3 - CU18): el perfil muestra el progreso del descuento por
+// fidelidad del mes (por empresa).
 import { Component, OnInit } from '@angular/core';
+import { FidelidadService, FilaFidelidad } from '../../../../core/services/fidelidad.service';
 import {
   ClienteResumen,
   ClientesEmpresaService,
@@ -31,8 +34,12 @@ export class ClientListComponent implements OnInit {
   perfil: PerfilCliente | null = null;
   cargandoPerfil = false;
   seleccionadoId: number | null = null;
+  fidelidad: FilaFidelidad[] = [];
 
-  constructor(private clientesService: ClientesEmpresaService) {}
+  constructor(
+    private clientesService: ClientesEmpresaService,
+    private fidelidadService: FidelidadService
+  ) {}
 
   ngOnInit(): void {
     this.cargar();
@@ -79,6 +86,11 @@ export class ClientListComponent implements OnInit {
     this.seleccionadoId = cliente.id;
     this.cargandoPerfil = true;
     this.perfil = null;
+    this.fidelidad = [];
+    this.fidelidadService.monitoreo(null, cliente.id).subscribe({
+      next: (datos) => this.fidelidad = datos.clientes,
+      error: () => this.fidelidad = []
+    });
     this.clientesService.perfil(cliente.id).subscribe({
       next: (perfil) => {
         this.perfil = perfil;
@@ -94,12 +106,17 @@ export class ClientListComponent implements OnInit {
 
   cerrarPerfil(): void {
     this.perfil = null;
+    this.fidelidad = [];
     this.seleccionadoId = null;
     this.cargandoPerfil = false;
   }
 
   claseSegmento(segmento: SegmentoCliente): string {
     return `seg seg-${segmento.toLowerCase()}`;
+  }
+
+  claseFidelidad(estado: string): string {
+    return `fid fid--${estado.toLowerCase()}`;
   }
 
   claseEvento(tipo: string): string {

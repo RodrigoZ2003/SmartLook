@@ -29,6 +29,8 @@ Reglas (Fase 2):
 - Una prenda con un cambio de talla/color (CU05) no se puede devolver, y
   no se puede devolver más de lo comprado.
 - La devolución completada es la nota de devolución (ND-000001).
+- MODIFICADO (Fase 3 - CU18): una compra que usó el descuento por fidelidad
+  no admite devolución.
 """
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -37,6 +39,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+from apps.fidelidad import servicio as fidelidad
 from apps.inventory.services import StockService
 from apps.users_auth.models import Usuario
 from common.utils import log_audit
@@ -117,6 +120,9 @@ class CompraDevolucion:
 
     def problema_compra(self, modalidad):
         """Motivo por el que la compra no se puede devolver, o None."""
+        # NUEVO (CU18): la compra con descuento por fidelidad no se devuelve.
+        if fidelidad.compra_con_descuento(orden=self.orden, venta=self.venta):
+            return "Esta compra usó el descuento por fidelidad: no admite devolución."
         if self.tipo == "VENTA":
             if self.venta.estado != "REGISTRADA":
                 return "La venta está anulada o tiene un conflicto sin resolver."

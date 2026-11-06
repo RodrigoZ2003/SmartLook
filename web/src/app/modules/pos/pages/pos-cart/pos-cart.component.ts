@@ -21,10 +21,15 @@
 // cargan las reservas confirmadas (pagadas) de la sucursal; al agregar una, entran
 // todas sus prendas (la reserva se retira completa) y se cobra solo el saldo.
 // Necesita conexión.
+// MODIFICADO (Fase 3 - CU18): descuento por fidelidad. Al escribir el correo del
+// cliente (en línea) se consulta si tiene el descuento del mes en la empresa de
+// la sucursal; si lo tiene y la venta no lleva reservas, el total sale con el
+// descuento y se registra con aplicar_fidelidad. Sin conexión no hay descuento.
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Subscription } from 'rxjs';
 import * as QRCode from 'qrcode';
 import { AuthService } from '../../../../core/auth/auth.service';
+import { FidelidadPos, FidelidadService } from '../../../../core/services/fidelidad.service';
 import { InventoryService } from '../../../inventory/services/inventory.service';
 import { ItemPayload, PosSaleService } from '../../services/pos-sale.service';
 import {
@@ -96,13 +101,20 @@ export class PosCartComponent implements OnInit, OnDestroy {
   reservasEnVenta: ReservaEnVenta[] = [];
   cargandoReservas = false;
   mostrarReservas = false;
+  // NUEVO (CU18): descuento por fidelidad del cliente de la venta.
+  fidelidadPos: FidelidadPos | null = null;
+  consultandoFidelidad = false;
+  errorFidelidad: string | null = null;
+  descuentoAplicado = 0;
+  private correoConsultado = '';
   private suscripciones = new Subscription();
 
   constructor(
     private inventoryService: InventoryService,
     private posSaleService: PosSaleService,
     private offline: PosOfflineService,
-    private authService: AuthService
+    private authService: AuthService,
+    private fidelidadService: FidelidadService
   ) {
     const roles = this.authService.obtenerRoles();
     this.esGestor = roles.some(rol => ROLES_GESTION_CONFLICTOS.includes(rol));
@@ -300,6 +312,52 @@ export class PosCartComponent implements OnInit, OnDestroy {
     return prendas + this.reservasEnVenta.reduce((acc, r) => acc + r.saldo, 0);
   }
 
+  // NUEVO (CU18): descuento por fidelidad (en línea, con el beneficio y sin reservas).
+  get descuentoFidelidad(): number {
+    if (!this.enLinea || !this.fidelidadPos?.disponible || this.reservasEnVenta.length > 0) {
+      return 0;
+    }
+    if (this.correoCliente.trim().toLowerCase() !== this.correoConsultado) {
+      return 0;
+    }
+    const prendas = this.items.reduce((acc, item) => acc + item.precio * item.cantidad, 0);
+    return Math.round(prendas * this.fidelidadPos.porcentaje) / 100;
+  }
+
+  // NUEVO (CU18): lo que se cobra (total menos el descuento por fidelidad).
+  get totalACobrar(): number {
+    return this.total - this.descuentoFidelidad;
+  }
+
+  // NUEVO (CU18): consulta si el cliente tiene el descuento en la empresa de la sucursal.
+  consultarFidelidad(): void {
+    const correo = this.correoCliente.trim().toLowerCase();
+    this.errorFidelidad = null;
+    if (!correo || !PATRON_CORREO.test(correo) || !this.sucursalSeleccionada || !this.enLinea) {
+      this.fidelidadPos = null;
+      this.correoConsultado = '';
+      return;
+    }
+    if (correo === this.correoConsultado && this.fidelidadPos) {
+      return;
+    }
+    this.consultandoFidelidad = true;
+    this.fidelidadService.consultarPos(correo, this.sucursalSeleccionada).subscribe({
+      next: (datos) => {
+        this.fidelidadPos = datos;
+        this.correoConsultado = correo;
+        this.consultandoFidelidad = false;
+        this.actualizarQrSiCorresponde();
+      },
+      error: (err) => {
+        this.fidelidadPos = null;
+        this.correoConsultado = '';
+        this.consultandoFidelidad = false;
+        this.errorFidelidad = err?.error?.error || null;
+      }
+    });
+  }
+
   get hayLineas(): boolean {
     return this.items.length > 0 || this.reservasEnVenta.length > 0;
   }
@@ -310,6 +368,10 @@ export class PosCartComponent implements OnInit, OnDestroy {
     this.reservasEnVenta = [];
     this.reservasDisponibles = [];
     this.mostrarReservas = false;
+    // CU18: el descuento depende de la empresa de la sucursal.
+    this.fidelidadPos = null;
+    this.correoConsultado = '';
+    this.consultarFidelidad();
     this.actualizarQrSiCorresponde();
   }
 
@@ -395,7 +457,7 @@ export class PosCartComponent implements OnInit, OnDestroy {
 
   async generarQr(): Promise<void> {
     const referencia = `SL-${Date.now()}`;
-    const contenido = `SmartLook - Pago QR\nTotal: Bs ${this.total.toFixed(2)}\nReferencia: ${referencia}`;
+    const contenido = `SmartLook - Pago QR\nTotal: Bs ${this.totalACobrar.toFixed(2)}\nReferencia: ${referencia}`;
     try {
       this.qrDataUrl = await QRCode.toDataURL(contenido, { width: 220 });
     } catch {
@@ -423,15 +485,18 @@ export class PosCartComponent implements OnInit, OnDestroy {
       return;
     }
     this.registrando = true;
+    const descuento = this.descuentoFidelidad;
     const itemsPayload: ItemPayload[] = [
       ...this.items.map(i => ({ id_variante: i.id_variante, cantidad: i.cantidad })),
       ...this.reservasEnVenta.flatMap(r => r.prendas.map(p => ({ id_reserva_item: p.id_item, cantidad: 1 })))
     ];
     this.posSaleService.registrarVenta(
-      this.sucursalSeleccionada, this.metodoPago, itemsPayload, this.correoCliente.trim() || null
+      this.sucursalSeleccionada, this.metodoPago, itemsPayload, this.correoCliente.trim() || null,
+      descuento > 0
     ).subscribe({
       next: (venta) => {
         this.ventaConfirmada = venta;
+        this.descuentoAplicado = descuento;
         this.registrando = false;
       },
       error: (err) => {
@@ -521,5 +586,9 @@ export class PosCartComponent implements OnInit, OnDestroy {
     this.qrDataUrl = null;
     this.ventaConfirmada = null;
     this.error = null;
+    this.fidelidadPos = null;
+    this.correoConsultado = '';
+    this.errorFidelidad = null;
+    this.descuentoAplicado = 0;
   }
 }

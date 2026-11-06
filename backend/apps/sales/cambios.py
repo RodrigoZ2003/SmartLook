@@ -30,6 +30,8 @@ Reglas (Fase 2):
 - El cambio completado es la nota de devolución (NC-000001).
 - MODIFICADO (CU12): una prenda devuelta o con una devolución en curso no se
   puede cambiar.
+- MODIFICADO (Fase 3 - CU18): una compra que usó el descuento por fidelidad no
+  admite cambio.
 """
 from datetime import timedelta
 
@@ -38,6 +40,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from apps.catalog.models import ProductoVariante
+from apps.fidelidad import servicio as fidelidad
 from apps.inventory.models import StockItem
 from apps.inventory.services import StockService
 from apps.users_auth.models import Usuario
@@ -129,6 +132,13 @@ def cargar_origen(id_venta_item=None, id_orden_item=None):
 
 def motivo_no_elegible(origen, modalidad):
     """Motivo por el que la prenda no se puede cambiar, o None si se puede."""
+    # NUEVO (CU18): la compra con descuento por fidelidad no admite cambio.
+    if origen.tipo == "POS":
+        con_descuento = fidelidad.compra_con_descuento(venta=origen.venta_item.id_venta)
+    else:
+        con_descuento = fidelidad.compra_con_descuento(orden=origen.orden_item.id_orden)
+    if con_descuento:
+        return "Esta compra usó el descuento por fidelidad: no admite cambio."
     if origen.tipo == "POS":
         if origen.venta_item.id_venta.estado != "REGISTRADA":
             return "La venta está anulada o tiene un conflicto sin resolver."

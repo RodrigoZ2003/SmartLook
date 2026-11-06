@@ -64,6 +64,8 @@ INSTALLED_APPS = [
     "apps.bi_reports",
     # NUEVO (Fase 3 - CU09): analítica con Machine Learning.
     "apps.analytics",
+    # NUEVO (Fase 3 - CU18): descuento por fidelidad.
+    "apps.fidelidad",
 ]
 
 

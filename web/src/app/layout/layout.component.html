@@ -4,6 +4,7 @@
 <!-- MODIFICADO (Fase 3 - CU09): opción "Analítica" (Machine Learning, SUPER_ADMIN y ADMIN_EMPRESA con plan con IA). -->
 <!-- MODIFICADO (Fase 3 - CU07): opción "Traspasos" debajo de Inventario (SUPER_ADMIN, ADMIN_EMPRESA y encargado). -->
 <!-- MODIFICADO (Fase 3 - CU04): "Clientes" solo para SUPER_ADMIN y ADMIN_EMPRESA (los mismos roles de puedeVerEmpresas). -->
+<!-- MODIFICADO (Fase 3 - CU18): opción "Fidelidad" debajo de Clientes (SUPER_ADMIN y ADMIN_EMPRESA). -->
 <div class="layout">
   <aside class="sidebar" [class.sidebar--hidden]="!sidebarVisible">
     <div class="sidebar-inner">
@@ -195,6 +196,16 @@
             <path d="M5 21c0-3.5 3-6.5 7-6.5s7 3 7 6.5"/>
           </svg>
           <span>Clientes</span>
+        </a>
+        <!-- NUEVO (Fase 3 - CU18): descuento por fidelidad (regla y monitoreo del mes). -->
+        <a routerLink="/clients/fidelidad" class="nav-link" *ngIf="puedeVerEmpresas">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="8" width="18" height="4" rx="1"/>
+            <path d="M5 12v9h14v-9"/>
+            <path d="M12 8v13"/>
+            <path d="M12 8c-2-3-6-3-6-.5S9 8 12 8c3 0 6 .5 6-.5S14 5 12 8z"/>
+          </svg>
+          <span>Fidelidad</span>
         </a>
         <a routerLink="/bitacora" class="nav-link" *ngIf="esPersonal">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

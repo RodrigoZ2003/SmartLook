@@ -13,6 +13,8 @@ urlpatterns = [
     path("api/bi/", include("apps.bi_reports.urls")),
     # NUEVO (Fase 3 - CU09): analítica con Machine Learning.
     path("api/analytics/", include("apps.analytics.urls")),
+    # NUEVO (Fase 3 - CU18): descuento por fidelidad.
+    path("api/fidelidad/", include("apps.fidelidad.urls")),
     # Documentación
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),

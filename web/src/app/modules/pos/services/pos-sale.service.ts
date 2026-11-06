@@ -5,6 +5,8 @@
 // MODIFICADO (Fase 2 - reservas con anticipo): las prendas de una reserva
 // confirmada se cobran con "id_reserva_item" (solo el saldo) y se listan las
 // reservas confirmadas de la sucursal para retirarlas en caja.
+// MODIFICADO (Fase 3 - CU18): aplicar_fidelidad=true pide aplicar el descuento
+// por fidelidad del cliente (solo el POS web en línea lo envía).
 
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
@@ -29,13 +31,15 @@ export class PosSaleService {
     idSucursal: number,
     metodoPago: string,
     items: ItemPayload[],
-    correoCliente: string | null = null
+    correoCliente: string | null = null,
+    aplicarFidelidad = false
   ): Observable<any> {
     return this.apiService.post('/sales/ventas-pos/registrar/', {
       id_sucursal: idSucursal,
       metodo_pago: metodoPago,
       items,
       correo_cliente: correoCliente || undefined,
+      aplicar_fidelidad: aplicarFidelidad || undefined,
     });
   }
 

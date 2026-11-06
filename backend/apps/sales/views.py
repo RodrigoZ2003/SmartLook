@@ -1,4 +1,6 @@
 # backend/apps/sales/views.py
+# MODIFICADO (Fase 3 - CU18): descuento por fidelidad en la cotización del
+# delivery y en la venta POS (el POS web envía aplicar_fidelidad=true).
 from collections import Counter
 
 from django.db import transaction
@@ -39,6 +41,7 @@ from .devoluciones import (
 )
 from .devoluciones import calcular as calcular_devolucion
 from .integrations.envio import cotizar, EnvioError
+from apps.fidelidad import servicio as fidelidad
 from rest_framework.permissions import IsAuthenticated
 
 def _sucursal_activa(sucursal_id):
@@ -180,12 +183,18 @@ class CartViewSet(ReadOnlyModelViewSet):
             cotizacion = cotizar(sucursal, latitud, longitud, cantidad_prendas)
         except EnvioError as e:
             return Response({"error": str(e)}, status=400)
+        # NUEVO (CU18): descuento por fidelidad sobre las prendas (el envío no se descuenta).
+        descuento, _, _ = fidelidad.calcular_descuento(
+            cliente, sucursal.id_empresa, subtotal,
+            tiene_reservas=any(item.id_reserva_item_id for item in items),
+        )
 
         return Response({
             "distancia_km": cotizacion["distancia_km"],
             "costo_envio": cotizacion["costo_envio"],
             "subtotal_productos": subtotal,
-            "total": subtotal + cotizacion["costo_envio"],
+            "descuento_fidelidad": descuento,
+            "total": subtotal - descuento + cotizacion["costo_envio"],
             "fuente_distancia": cotizacion["fuente_distancia"],
         })
 
@@ -295,12 +304,15 @@ class PosSaleViewSet(ReadOnlyModelViewSet):
         except Sucursal.DoesNotExist:
             return Response({"error": "Sucursal no encontrada."}, status=404)
 
+        # MODIFICADO (CU18): el cliente se guarda al crear la venta y, desde el
+        # POS web, se aplica su descuento por fidelidad si lo tiene.
+        aplicar_fidelidad = str(request.data.get("aplicar_fidelidad", "")).lower() in ("true", "1")
         try:
             with transaction.atomic():
-                venta = PosSaleService.registrar_venta(request.user, sucursal, items, metodo_pago)
-                if cliente is not None:
-                    venta.id_cliente = cliente
-                    venta.save(update_fields=["id_cliente"])
+                venta = PosSaleService.registrar_venta(
+                    request.user, sucursal, items, metodo_pago,
+                    cliente=cliente, aplicar_fidelidad=aplicar_fidelidad,
+                )
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
 

@@ -3,11 +3,16 @@ import { Component, OnInit, AfterViewChecked } from '@angular/core';
 import { loadStripe, Stripe, StripeCardElement, StripeElements } from '@stripe/stripe-js';
 import { environment } from '../../../../../environments/environment';
 import { CartService, DatosEntrega } from '../../services/cart.service';
+import { FidelidadService, FilaFidelidad } from '../../../../core/services/fidelidad.service';
 // MODIFICADO (SaaS): el cliente tiene un carrito por tienda (empresa). La página
 // muestra una pestaña por tienda y cobra solo el carrito de la tienda elegida,
 // con las sucursales de esa misma tienda.
 // MODIFICADO (Fase 2 - reservas con anticipo): el total del carrito ya viene
 // con lo pagado al reservar descontado (se cobra solo el saldo).
+// MODIFICADO (Fase 3 - CU18): descuento por fidelidad. Si el cliente ganó el
+// descuento del mes en la tienda elegida y el carrito no tiene reservas, se
+// muestra la línea "Descuento por fidelidad" y el total ya descontado (el
+// envío se cobra completo). El backend vuelve a calcularlo al cobrar.
 
 @Component({
   selector: 'app-cart-page',
@@ -47,8 +52,11 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
   private cardElementMontado = false;
   private clientSecret: string | null = null;
   private ordenPendiente: any = null;
+  // CU18: progreso del descuento por fidelidad en la tienda elegida.
+  fidelidad: FilaFidelidad | null = null;
+  reglaFidelidadActiva = false;
 
-  constructor(private cartService: CartService) {}
+  constructor(private cartService: CartService, private fidelidadService: FidelidadService) {}
 
   ngOnInit(): void {
     this.cargarCarrito();
@@ -82,13 +90,47 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
     return this.tipoEntrega === 'RETIRO' && this.tienePagoReservas && !(Number(this.carrito?.total) > 0);
   }
 
+  // NUEVO (CU18): el carrito tiene prendas reservadas (el descuento no aplica).
+  get tieneReservas(): boolean {
+    return (this.carrito?.items || []).some((item: any) => item.reservado);
+  }
+
+  // NUEVO (CU18): descuento por fidelidad sobre las prendas (0 si no aplica).
+  get descuentoFidelidad(): number {
+    if (!this.fidelidad?.disponible || this.tieneReservas) {
+      return 0;
+    }
+    const prendas = Number(this.carrito?.total) || 0;
+    return Math.round(prendas * (this.fidelidad.porcentaje || 0)) / 100;
+  }
+
+  // Prendas a cobrar (con el descuento por fidelidad, si tiene).
+  get totalPrendas(): number {
+    return (Number(this.carrito?.total) || 0) - this.descuentoFidelidad;
+  }
+
   // Total a cobrar: prendas + envío (solo si es delivery y ya hay cotización).
   get totalAPagar(): number {
-    const productos = Number(this.carrito?.total) || 0;
     const envio = this.tipoEntrega === 'DELIVERY' && this.cotizacion
       ? Number(this.cotizacion.costo_envio) || 0
       : 0;
-    return productos + envio;
+    return this.totalPrendas + envio;
+  }
+
+  // NUEVO (CU18): progreso del descuento por fidelidad en la tienda elegida.
+  private cargarFidelidad(): void {
+    const idEmpresa = this.carrito?.id_empresa;
+    if (idEmpresa == null) {
+      this.fidelidad = null;
+      return;
+    }
+    this.fidelidadService.miProgreso(idEmpresa).subscribe({
+      next: (datos) => {
+        this.reglaFidelidadActiva = datos.regla.activa;
+        this.fidelidad = datos.empresas.find(e => e.id_empresa === idEmpresa) || null;
+      },
+      error: () => this.fidelidad = null
+    });
   }
 
   // Recarga los carritos activos y conserva la tienda elegida si aún tiene prendas.
@@ -105,6 +147,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
           this.carrito = null;
           this.idEmpresaSeleccionada = null;
           this.sucursales = [];
+          this.fidelidad = null;
           return;
         }
         if (elegido.id_empresa !== this.idEmpresaSeleccionada) {
@@ -112,6 +155,7 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
           return;
         }
         this.carrito = elegido;
+        this.cargarFidelidad();
         // Si cambió la cantidad de prendas, el costo de envío también puede cambiar.
         if (
           this.tipoEntrega === 'DELIVERY' &&
@@ -153,7 +197,9 @@ export class CartPageComponent implements OnInit, AfterViewChecked {
     this.sucursalMapa = null;
     this.cotizacion = null;
     this.errorPago = null;
+    this.fidelidad = null;
     this.filtrarSucursales();
+    this.cargarFidelidad();
   }
 
   // SaaS: solo las sucursales activas de la tienda del carrito elegido.

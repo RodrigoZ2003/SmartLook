@@ -4,6 +4,12 @@
 # menos lo pagado al reservar) y la reserva se retira COMPLETA (todas sus
 # prendas pendientes juntas). Se quitó la devolución automática anterior
 # (DevolucionService), reemplazada por apps/sales/devoluciones.py (CU12).
+# MODIFICADO (Fase 3 - CU18): descuento por fidelidad. Si el cliente ganó el
+# beneficio del mes en la empresa, la compra sin reservas descuenta el
+# porcentaje de la regla sobre las prendas (el envío se cobra completo):
+#   - checkout web: el pedido pendiente aparta el descuento y al pagarse queda usado;
+#   - POS web en línea (aplicar_fidelidad=True, con el correo del cliente).
+# La venta POS sin conexión nunca lleva descuento (ver apps/sales/sync.py).
 from decimal import Decimal
 
 from django.db import transaction
@@ -11,6 +17,7 @@ from apps.inventory.services import StockService
 from apps.inventory.models import StockItem
 from apps.catalog.models import ProductoVariante
 from common.utils import log_audit
+from apps.fidelidad import servicio as fidelidad
 from .models import Cart, Delivery, Order, OrderItem, PosSale, PosSaleItem
 from .integrations.stripe_payment import crear_intento_pago, verificar_pago, PagoRechazadoError
 from .integrations.envio import cotizar, EnvioError
@@ -135,6 +142,12 @@ class CheckoutService:
         subtotal = saldo_reservas + sum(
             item.id_variante.precio * item.cantidad for item in items if not item.id_reserva_item_id
         )
+        # NUEVO (CU18): descuento por fidelidad (solo si el carrito no tiene reservas).
+        descuento, porcentaje_descuento, _ = fidelidad.calcular_descuento(
+            cliente, sucursal.id_empresa, subtotal,
+            tiene_reservas=any(item.id_reserva_item_id for item in items),
+        )
+        subtotal -= descuento
         costo_envio = Decimal("0.00")
         cotizacion = None
 
@@ -189,6 +202,8 @@ class CheckoutService:
                     distancia_km=cotizacion["distancia_km"],
                     costo_envio=costo_envio,
                 )
+            if descuento > 0:
+                fidelidad.apartar_para_pedido(order, porcentaje_descuento, descuento)
         return order, client_secret
 
     @staticmethod
@@ -241,6 +256,8 @@ class CheckoutService:
                     motivo=f"Venta digital - Orden #{order.id_orden}",
                 )
 
+        # NUEVO (CU18): si el pedido llevaba el descuento por fidelidad, queda usado.
+        fidelidad.confirmar_uso_pedido(order)
         order.estado = "PAGADA"
         order.save()
         cart.estado = "CONVERTIDO"
@@ -268,7 +285,7 @@ class CheckoutService:
 class PosSaleService:
     @staticmethod
     @transaction.atomic
-    def registrar_venta(cajero, sucursal, items_data, metodo_pago):
+    def registrar_venta(cajero, sucursal, items_data, metodo_pago, cliente=None, aplicar_fidelidad=False):
         """
         CU16 - Registra una venta presencial. items_data: lista de
         {"id_variante": <int>, "cantidad": <int>} para prendas normales,
@@ -277,6 +294,9 @@ class PosSaleService:
 
         MODIFICADO (Fase 2): de una reserva pagada se cobra solo el saldo y
         se retira completa (todas sus prendas pendientes en la misma venta).
+        MODIFICADO (CU18): cliente opcional (por su correo). Con
+        aplicar_fidelidad=True (POS web) y el beneficio del mes disponible, la
+        venta sin reservas descuenta el porcentaje de la regla.
         """
         if not items_data:
             raise ValueError("La venta debe tener al menos una prenda.")
@@ -331,12 +351,21 @@ class PosSaleService:
             if not item.get("id_reserva_item")
         )
 
+        descuento, porcentaje_descuento = Decimal("0"), Decimal("0")
+        if cliente is not None and aplicar_fidelidad:
+            descuento, porcentaje_descuento, _ = fidelidad.calcular_descuento(
+                cliente, sucursal.id_empresa, total, tiene_reservas=bool(reserva_items)
+            )
+
         venta = PosSale.objects.create(
             id_sucursal=sucursal,
             id_usuario=cajero,
-            total=total,
+            total=total - descuento,
             metodo_pago=metodo_pago,
+            id_cliente=cliente,
         )
+        if descuento > 0:
+            fidelidad.registrar_uso_venta(venta, porcentaje_descuento, descuento)
 
         items_reserva_comprados = []
         for item in items_data:
@@ -381,6 +410,7 @@ class PosSaleService:
                 f"{cajero.nombres} {cajero.apellidos} registró una venta "
                 f"presencial en {sucursal.nombre} - Venta #{venta.id_venta} - "
                 f"Bs {venta.total} ({metodo_pago})"
+                + (f" con descuento por fidelidad de Bs {descuento}" if descuento > 0 else "")
             ),
         )
         return venta
