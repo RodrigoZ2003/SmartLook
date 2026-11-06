@@ -18,6 +18,10 @@
 # Notificaciones (campana): nueva solicitud -> SUPER_ADMIN y ADMIN_EMPRESA de
 # la empresa; aprobado o rechazado -> quien lo solicitó, si es administrador
 # (el encargado no recibe avisos, igual que en el resto del sistema).
+#
+# MODIFICADO (arreglo RF02): un grupo de la empresa con VER_TRASPASOS ve los
+# traspasos de toda su empresa; con GESTIONAR_TRASPASOS solicita, aprueba,
+# rechaza, recibe y cancela como el administrador, solo dentro de su empresa.
 
 import math
 from collections import defaultdict
@@ -28,6 +32,7 @@ from django.utils import timezone
 
 from apps.catalog.models import ProductoVariante, Sucursal
 from apps.users_auth.notificaciones import administradores, notificar
+from common.privilegios import tiene_privilegio
 
 from .models import DetalleTraspaso, StockItem, Traspaso
 from .services import StockService
@@ -63,15 +68,23 @@ def es_super_admin(usuario):
 
 
 def es_admin_de(usuario, empresa_id):
-    """SUPER_ADMIN, o ADMIN_EMPRESA de esa empresa."""
+    """SUPER_ADMIN, o ADMIN_EMPRESA de esa empresa (o un grupo de esa empresa con GESTIONAR_TRASPASOS)."""
     roles = roles_de(usuario)
-    return "SUPER_ADMIN" in roles or ("ADMIN_EMPRESA" in roles and usuario.id_empresa_id == empresa_id)
+    if "SUPER_ADMIN" in roles:
+        return True
+    if usuario.id_empresa_id != empresa_id:
+        return False
+    return "ADMIN_EMPRESA" in roles or tiene_privilegio(usuario, "GESTIONAR_TRASPASOS")
 
 
 def es_encargado(usuario):
-    """True si es encargado de sucursal (y no administrador)."""
+    """True si es encargado de sucursal (y no administrador ni gestiona traspasos por un grupo)."""
     roles = roles_de(usuario)
-    return "ENCARGADO_SUCURSAL" in roles and not roles & ROLES_ADMIN
+    return (
+        "ENCARGADO_SUCURSAL" in roles
+        and not roles & ROLES_ADMIN
+        and not tiene_privilegio(usuario, "GESTIONAR_TRASPASOS")
+    )
 
 
 def traspasos_visibles(usuario):
@@ -87,6 +100,9 @@ def traspasos_visibles(usuario):
         return qs.none()
     qs = qs.filter(id_empresa_id=usuario.id_empresa_id)
     if "ADMIN_EMPRESA" in roles:
+        return qs
+    # NUEVO (arreglo RF02): un grupo con VER_TRASPASOS ve los de toda su empresa.
+    if tiene_privilegio(usuario, "VER_TRASPASOS"):
         return qs
     if "ENCARGADO_SUCURSAL" in roles and usuario.id_sucursal_id:
         return qs.filter(
@@ -216,7 +232,9 @@ def _verificar_stock(origen, lineas):
 def crear(usuario, origen_id, destino_id, lineas, observacion=None, desde_sugerencia=False):
     """Registra una solicitud de traspaso y avisa a los administradores."""
     roles = roles_de(usuario)
-    if not roles & (ROLES_ADMIN | {"ENCARGADO_SUCURSAL"}):
+    if not roles & (ROLES_ADMIN | {"ENCARGADO_SUCURSAL"}) and not tiene_privilegio(
+        usuario, "GESTIONAR_TRASPASOS"
+    ):
         raise SinPermiso("No tienes permiso para solicitar traspasos.")
     sucursales = sucursales_permitidas(usuario)
     origen = sucursales.filter(pk=origen_id).first()

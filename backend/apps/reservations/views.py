@@ -5,6 +5,8 @@
 # (anticipo o total) y recién ahí se aparta la prenda; vence a la semana de
 # la fecha reservada y el cliente puede cancelarla (CU17) con reembolso menos
 # el 10% (ver apps/reservations/pagos.py).
+# MODIFICADO (arreglo RF02): un grupo con VER_RESERVAS o GESTIONAR_RESERVAS
+# también ve las reservas de su empresa como personal de tienda.
 from collections import Counter
 from rest_framework.viewsets import ModelViewSet
 from rest_framework.decorators import action
@@ -12,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from common.permissions import IsEncargadoSucursal, IsCliente
+from common.privilegios import tiene_alguno
 from common.tenancy import alcance_de, filtrar_queryset
 from common.utils import log_audit
 from apps.users_auth.models import Cliente
@@ -51,8 +54,11 @@ class FittingReservationViewSet(ModelViewSet):
         return [IsAuthenticated()]
 
     def _es_personal(self):
-        """True si el usuario es personal de tienda (no cliente)."""
-        return self.request.user.roles.filter(nombre__in=ROLES_PERSONAL_RESERVAS).exists()
+        """True si el usuario es personal de tienda (no cliente), por su rol o por un grupo."""
+        usuario = self.request.user
+        return usuario.roles.filter(nombre__in=ROLES_PERSONAL_RESERVAS).exists() or tiene_alguno(
+            usuario, "VER_RESERVAS", "GESTIONAR_RESERVAS"
+        )
 
     def _cliente(self):
         """Ficha de cliente del usuario (o None)."""

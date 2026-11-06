@@ -1,8 +1,9 @@
 <!-- web/src/app/modules/products/pages/product-management/product-management.component.html -->
+<!-- MODIFICADO (arreglo RF02): botones de crear, editar y eliminar solo con puedeGestionar. -->
 <div class="products-container">
   <div class="header">
     <h2>Gestión de Productos</h2>
-    <button class="btn btn-primary" (click)="showForm ? cancelar() : nuevoProducto()">
+    <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showForm ? cancelar() : nuevoProducto()">
       {{ showForm ? 'Cancelar' : 'Nuevo Producto' }}
     </button>
   </div>
@@ -110,8 +111,8 @@
               <span class="badge" [class.active]="p.estado === 'ACTIVO'">{{ p.estado }}</span>
             </td>
             <td>
-              <button class="btn btn-link" (click)="editarProducto(p)">Editar</button>
-              <button class="btn btn-link danger" (click)="eliminarProducto(p)">Eliminar</button>
+              <button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarProducto(p)">Editar</button>
+              <button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarProducto(p)">Eliminar</button>
             </td>
           </tr>
 
@@ -121,7 +122,7 @@
               <div class="variantes-panel">
                 <div class="header">
                   <h4>Variantes de "{{ p.nombre }}"</h4>
-                  <button class="btn btn-primary btn-sm" (click)="showFormVariante ? cancelarVariante() : nuevaVariante()">
+                  <button *ngIf="puedeGestionar" class="btn btn-primary btn-sm" (click)="showFormVariante ? cancelarVariante() : nuevaVariante()">
                     {{ showFormVariante ? 'Cancelar' : '+ Nueva Variante' }}
                   </button>
                 </div>
@@ -193,8 +194,8 @@
                       <td>{{ v.cantidad }}</td>
                       <td><span class="badge" [class.active]="v.estado === 'DISPONIBLE'">{{ v.estado }}</span></td>
                       <td>
-                        <button class="btn btn-link" (click)="editarVariante(v)">Editar</button>
-                        <button class="btn btn-link danger" (click)="eliminarVariante(v)">Eliminar</button>
+                        <button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarVariante(v)">Editar</button>
+                        <button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarVariante(v)">Eliminar</button>
                       </td>
                     </tr>
                     <tr *ngIf="!p.variantes || p.variantes.length === 0">

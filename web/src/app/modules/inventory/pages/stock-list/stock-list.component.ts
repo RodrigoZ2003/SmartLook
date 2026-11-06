@@ -4,11 +4,14 @@
 // Movimiento" que tiene movement-history, para que el botón + esté
 // disponible sin importar en qué pestaña (Stock/Movimientos) estés -
 // igual que el FAB en mobile, que aparece en ambas pestañas.
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo se
+// muestran con el permiso GESTIONAR de la pantalla (puedeGestionar).
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { InventoryService } from '../../services/inventory.service';
 import { StockItem } from '../../../../core/models/inventory.interface';
+import { AccesoService } from '../../../../core/auth/acceso.service';
 
 @Component({
   selector: 'app-stock-list',
@@ -16,6 +19,9 @@ import { StockItem } from '../../../../core/models/inventory.interface';
   styleUrls: ['./stock-list.component.scss']
 })
 export class StockListComponent implements OnInit {
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  puedeGestionar = inject(AccesoService).puedeGestionar('inventario');
   stockItems: StockItem[] = [];
   sucursales: any[] = [];
   variantes: any[] = [];

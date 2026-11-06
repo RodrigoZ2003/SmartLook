@@ -1,11 +1,12 @@
 <!-- web/src/app/modules/attributes/pages/attribute-management/attribute-management.component.html -->
+<!-- MODIFICADO (arreglo RF02): botones de crear, editar y eliminar solo con puedeGestionar. -->
 <div class="attributes-container">
 
   <!-- CATEGORÍAS -->
   <section>
     <div class="header">
       <h2>Categorías</h2>
-      <button class="btn btn-primary" (click)="showFormCategoria ? cancelarCategoria() : nuevaCategoria()">
+      <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showFormCategoria ? cancelarCategoria() : nuevaCategoria()">
         {{ showFormCategoria ? 'Cancelar' : 'Nueva Categoría' }}
       </button>
     </div>
@@ -28,7 +29,7 @@
           <tr *ngFor="let c of categorias">
             <td>{{ c.nombre }}</td><td>{{ c.descripcion || 'N/A' }}</td>
             <td><span class="badge" [class.active]="c.estado">{{ c.estado ? 'Activa' : 'Inactiva' }}</span></td>
-            <td><button class="btn btn-link" (click)="editarCategoria(c)">Editar</button><button class="btn btn-link danger" (click)="eliminarCategoria(c)">Eliminar</button></td>
+            <td><button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarCategoria(c)">Editar</button><button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarCategoria(c)">Eliminar</button></td>
           </tr>
           <tr *ngIf="categorias.length === 0"><td colspan="4">No hay categorías registradas.</td></tr>
         </tbody>
@@ -40,7 +41,7 @@
   <section>
     <div class="header">
       <h2>Marcas</h2>
-      <button class="btn btn-primary" (click)="showFormMarca ? cancelarMarca() : nuevaMarca()">
+      <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showFormMarca ? cancelarMarca() : nuevaMarca()">
         {{ showFormMarca ? 'Cancelar' : 'Nueva Marca' }}
       </button>
     </div>
@@ -63,7 +64,7 @@
           <tr *ngFor="let m of marcas">
             <td>{{ m.nombre }}</td><td>{{ m.descripcion || 'N/A' }}</td>
             <td><span class="badge" [class.active]="m.estado">{{ m.estado ? 'Activa' : 'Inactiva' }}</span></td>
-            <td><button class="btn btn-link" (click)="editarMarca(m)">Editar</button><button class="btn btn-link danger" (click)="eliminarMarca(m)">Eliminar</button></td>
+            <td><button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarMarca(m)">Editar</button><button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarMarca(m)">Eliminar</button></td>
           </tr>
           <tr *ngIf="marcas.length === 0"><td colspan="4">No hay marcas registradas.</td></tr>
         </tbody>
@@ -75,7 +76,7 @@
   <section>
     <div class="header">
       <h2>Temporadas</h2>
-      <button class="btn btn-primary" (click)="showFormTemporada ? cancelarTemporada() : nuevaTemporada()">
+      <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showFormTemporada ? cancelarTemporada() : nuevaTemporada()">
         {{ showFormTemporada ? 'Cancelar' : 'Nueva Temporada' }}
       </button>
     </div>
@@ -100,7 +101,7 @@
           <tr *ngFor="let t of temporadas">
             <td>{{ t.nombre }}</td><td>{{ t.fecha_inicio || 'N/A' }} - {{ t.fecha_fin || 'N/A' }}</td>
             <td><span class="badge" [class.active]="t.estado">{{ t.estado ? 'Activa' : 'Inactiva' }}</span></td>
-            <td><button class="btn btn-link" (click)="editarTemporada(t)">Editar</button><button class="btn btn-link danger" (click)="eliminarTemporada(t)">Eliminar</button></td>
+            <td><button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarTemporada(t)">Editar</button><button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarTemporada(t)">Eliminar</button></td>
           </tr>
           <tr *ngIf="temporadas.length === 0"><td colspan="4">No hay temporadas registradas.</td></tr>
         </tbody>
@@ -112,7 +113,7 @@
   <section>
     <div class="header">
       <h2>Colecciones</h2>
-      <button class="btn btn-primary" (click)="showFormColeccion ? cancelarColeccion() : nuevaColeccion()">
+      <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showFormColeccion ? cancelarColeccion() : nuevaColeccion()">
         {{ showFormColeccion ? 'Cancelar' : 'Nueva Colección' }}
       </button>
     </div>
@@ -136,7 +137,7 @@
           <tr *ngFor="let c of colecciones">
             <td>{{ c.nombre }}</td><td>{{ c.anio || 'N/A' }}</td>
             <td><span class="badge" [class.active]="c.estado">{{ c.estado ? 'Activa' : 'Inactiva' }}</span></td>
-            <td><button class="btn btn-link" (click)="editarColeccion(c)">Editar</button><button class="btn btn-link danger" (click)="eliminarColeccion(c)">Eliminar</button></td>
+            <td><button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarColeccion(c)">Editar</button><button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarColeccion(c)">Eliminar</button></td>
           </tr>
           <tr *ngIf="colecciones.length === 0"><td colspan="4">No hay colecciones registradas.</td></tr>
         </tbody>
@@ -148,7 +149,7 @@
   <section>
     <div class="header">
       <h2>Tallas</h2>
-      <button class="btn btn-primary" (click)="showFormTalla ? cancelarTalla() : nuevaTalla()">
+      <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showFormTalla ? cancelarTalla() : nuevaTalla()">
         {{ showFormTalla ? 'Cancelar' : 'Nueva Talla' }}
       </button>
     </div>
@@ -171,7 +172,7 @@
           <tr *ngFor="let talla of tallas">
             <td>{{ talla.nombre }}</td><td>{{ talla.descripcion || 'N/A' }}</td>
             <td><span class="badge" [class.active]="talla.estado">{{ talla.estado ? 'Activa' : 'Inactiva' }}</span></td>
-            <td><button class="btn btn-link" (click)="editarTalla(talla)">Editar</button><button class="btn btn-link danger" (click)="eliminarTalla(talla)">Eliminar</button></td>
+            <td><button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarTalla(talla)">Editar</button><button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarTalla(talla)">Eliminar</button></td>
           </tr>
           <tr *ngIf="tallas.length === 0"><td colspan="4">No hay tallas registradas.</td></tr>
         </tbody>
@@ -183,7 +184,7 @@
   <section>
     <div class="header">
       <h2>Colores</h2>
-      <button class="btn btn-primary" (click)="showFormColor ? cancelarColor() : nuevoColor()">
+      <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showFormColor ? cancelarColor() : nuevoColor()">
         {{ showFormColor ? 'Cancelar' : 'Nuevo Color' }}
       </button>
     </div>
@@ -207,7 +208,7 @@
             <td><span class="swatch" [style.background]="color.codigo_hex"></span></td>
             <td>{{ color.nombre }}</td><td>{{ color.codigo_hex || 'N/A' }}</td>
             <td><span class="badge" [class.active]="color.estado">{{ color.estado ? 'Activo' : 'Inactivo' }}</span></td>
-            <td><button class="btn btn-link" (click)="editarColor(color)">Editar</button><button class="btn btn-link danger" (click)="eliminarColor(color)">Eliminar</button></td>
+            <td><button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarColor(color)">Editar</button><button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarColor(color)">Eliminar</button></td>
           </tr>
           <tr *ngIf="colores.length === 0"><td colspan="5">No hay colores registrados.</td></tr>
         </tbody>

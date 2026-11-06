@@ -1,4 +1,5 @@
 <!-- web/src/app/modules/store/pages/branch-management/branch-management.component.html -->
+<!-- MODIFICADO (arreglo RF02): botones de crear, editar y eliminar solo con puedeGestionar. -->
 <div class="store-container">
   <nav class="tabs">
     <a routerLink="/store/sucursales" routerLinkActive="active">Sucursales</a>
@@ -6,7 +7,7 @@
   </nav>
   <div class="header">
     <h2>Gestión de Sucursales</h2>
-    <button class="btn btn-primary" (click)="showForm ? cancelar() : nuevaSucursal()">
+    <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showForm ? cancelar() : nuevaSucursal()">
       {{ showForm ? 'Cancelar' : 'Nueva Sucursal' }}
     </button>
   </div>
@@ -78,8 +79,8 @@
             </span>
           </td>
           <td>
-            <button class="btn btn-link" (click)="editarSucursal(branch)">Editar</button>
-            <button class="btn btn-link danger" (click)="eliminarSucursal(branch)">Eliminar</button>
+            <button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarSucursal(branch)">Editar</button>
+            <button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarSucursal(branch)">Eliminar</button>
           </td>
         </tr>
         <tr *ngIf="branches.length === 0"><td [attr.colspan]="esSuperAdmin ? 7 : 6">No hay sucursales registradas.</td></tr>

@@ -1,4 +1,5 @@
 <!-- web/src/app/modules/inventory/pages/movement-history/movement-history.component.html -->
+<!-- MODIFICADO (arreglo RF02): botones de crear, editar y eliminar solo con puedeGestionar. -->
 <div class="inventory-container">
   <nav class="tabs">
     <a routerLink="/inventory/stock" routerLinkActive="active">Stock</a>
@@ -7,7 +8,7 @@
 
   <div class="header">
     <h2>Historial de Movimientos</h2>
-    <button class="btn btn-primary" (click)="showForm = !showForm">
+    <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showForm = !showForm">
       {{ showForm ? 'Cancelar' : '+ Registrar Movimiento' }}
     </button>
   </div>

@@ -1,11 +1,14 @@
 // web/src/app/modules/store/pages/city-management/city-management.component.ts
 //
 // Archivo NUEVO.
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo se
+// muestran con el permiso GESTIONAR de la pantalla (puedeGestionar).
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { BranchService } from '../../services/branch.service';
 import { Country } from '../../../../core/models/branch.interface';
+import { AccesoService } from '../../../../core/auth/acceso.service';
 
 @Component({
   selector: 'app-city-management',
@@ -13,6 +16,9 @@ import { Country } from '../../../../core/models/branch.interface';
   styleUrls: ['./city-management.component.scss']
 })
 export class CityManagementComponent implements OnInit {
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  puedeGestionar = inject(AccesoService).puedeGestionar('sucursales');
   countries: Country[] = [];
   cities: any[] = [];
   cityForm!: FormGroup;

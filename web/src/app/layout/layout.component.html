@@ -5,6 +5,7 @@
 <!-- MODIFICADO (Fase 3 - CU07): opción "Traspasos" debajo de Inventario (SUPER_ADMIN, ADMIN_EMPRESA y encargado). -->
 <!-- MODIFICADO (Fase 3 - CU04): "Clientes" solo para SUPER_ADMIN y ADMIN_EMPRESA (los mismos roles de puedeVerEmpresas). -->
 <!-- MODIFICADO (Fase 3 - CU18): opción "Fidelidad" debajo de Clientes (SUPER_ADMIN y ADMIN_EMPRESA). -->
+<!-- MODIFICADO (arreglo RF02): cada opción usa ver(<pantalla>) (SUPER_ADMIN y ADMIN_EMPRESA todo; el resto según "Permisos por rol"). -->
 <div class="layout">
   <aside class="sidebar" [class.sidebar--hidden]="!sidebarVisible">
     <div class="sidebar-inner">
@@ -13,7 +14,7 @@
         <span class="logo-texto">SmartLook</span>
       </div>
       <nav>
-        <a routerLink="/dashboard" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/dashboard" class="nav-link" *ngIf="ver('dashboard')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 11.5 12 4l8 7.5"/>
             <path d="M6 10v9h5v-6h2v6h5v-9"/>
@@ -39,7 +40,7 @@
           </svg>
           <span>Mi plan</span>
         </a>
-        <a routerLink="/catalog" class="nav-link" *ngIf="!esSoloRepartidor">
+        <a routerLink="/catalog" class="nav-link" *ngIf="ver('catalogo')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3v3"/>
             <path d="M4 10 12 6l8 4-3 2H7z"/>
@@ -47,7 +48,7 @@
           </svg>
           <span>Catálogo</span>
         </a>
-        <a routerLink="/reservations" class="nav-link" *ngIf="!esSoloRepartidor">
+        <a routerLink="/reservations" class="nav-link" *ngIf="ver('reservas')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="5" width="18" height="16" rx="2"/>
             <path d="M3 10h18M8 3v4M16 3v4"/>
@@ -62,7 +63,7 @@
           </svg>
           <span>Carrito</span>
         </a>
-        <a routerLink="/pos" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/pos" class="nav-link" *ngIf="ver('pos')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="6" width="18" height="12" rx="2"/>
             <path d="M3 10h18"/>
@@ -84,7 +85,7 @@
           </svg>
           <span>Perfil</span>
         </a>
-        <a routerLink="/deliveries" class="nav-link" *ngIf="puedeVerEntregas">
+        <a routerLink="/deliveries" class="nav-link" *ngIf="ver('entregas')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 7h11v9H3z"/>
             <path d="M14 10h4l3 3v3h-7"/>
@@ -94,7 +95,7 @@
           <span>Entregas</span>
         </a>
         <!-- NUEVO (devoluciones) -->
-        <a routerLink="/devoluciones" class="nav-link" *ngIf="puedeVerDevoluciones">
+        <a routerLink="/devoluciones" class="nav-link" *ngIf="ver('devoluciones')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M9 14 4 9l5-5"/>
             <path d="M4 9h11a5 5 0 0 1 0 10h-4"/>
@@ -102,7 +103,7 @@
           <span>Devoluciones</span>
         </a>
         <!-- NUEVO (Fase 3 - CU13): reportes convencionales sin IA (los tres planes). -->
-        <a routerLink="/assistant-admin/reportes" class="nav-link" *ngIf="puedeVerAsistente">
+        <a routerLink="/assistant-admin/reportes" class="nav-link" *ngIf="ver('reportes')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 20V10"/>
             <path d="M10 20V4"/>
@@ -111,7 +112,7 @@
           </svg>
           <span>Reportes</span>
         </a>
-        <a routerLink="/assistant-admin" class="nav-link" *ngIf="puedeVerAsistente && planIncluyeIA">
+        <a routerLink="/assistant-admin" class="nav-link" *ngIf="ver('asistente') && planIncluyeIA">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 4h16v11H8l-4 4z"/>
             <circle cx="9" cy="9.5" r="1"/>
@@ -121,7 +122,7 @@
           <span>Asistente</span>
         </a>
         <!-- NUEVO (Fase 3 - CU09): analítica con Machine Learning. -->
-        <a routerLink="/assistant-admin/analitica" class="nav-link" *ngIf="puedeVerAnalitica && planIncluyeIA">
+        <a routerLink="/assistant-admin/analitica" class="nav-link" *ngIf="ver('analitica') && planIncluyeIA">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 3v18h18"/>
             <path d="m7 15 4-4 3 3 6-6"/>
@@ -129,7 +130,7 @@
           </svg>
           <span>Analítica</span>
         </a>
-        <a routerLink="/inventory" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/inventory" class="nav-link" *ngIf="ver('inventario')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 8 12 4l8 4-8 4z"/>
             <path d="M4 8v9l8 4 8-4V8"/>
@@ -138,42 +139,42 @@
           <span>Inventario</span>
         </a>
         <!-- NUEVO (Fase 3 - CU07): traspasos entre sucursales. -->
-        <a routerLink="/inventory/traspasos" class="nav-link" *ngIf="puedeVerTraspasos">
+        <a routerLink="/inventory/traspasos" class="nav-link" *ngIf="ver('traspasos')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M4 8h13l-3-3"/>
             <path d="M20 16H7l3 3"/>
           </svg>
           <span>Traspasos</span>
         </a>
-        <a routerLink="/store/sucursales" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/store/sucursales" class="nav-link" *ngIf="ver('sucursales')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 21V10l7-6 7 6v11"/>
             <path d="M9 21v-6h6v6"/>
           </svg>
           <span>Sucursales</span>
         </a>
-        <a routerLink="/store/proveedores" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/store/proveedores" class="nav-link" *ngIf="ver('proveedores')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M3 7h18l-2 13H5z"/>
             <path d="M8 7V5a4 4 0 0 1 8 0v2"/>
           </svg>
           <span>Proveedores</span>
         </a>
-        <a routerLink="/products" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/products" class="nav-link" *ngIf="ver('productos')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M20 7 12 3 4 7v10l8 4 8-4z"/>
             <path d="M4 7l8 4 8-4M12 11v10"/>
           </svg>
           <span>Productos</span>
         </a>
-        <a routerLink="/attributes" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/attributes" class="nav-link" *ngIf="ver('atributos')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="13.5" cy="6.5" r="2.5"/>
             <path d="M17.5 3.5 21 7l-9 9-4-1-1-4z"/>
           </svg>
           <span>Atributos de Producto</span>
         </a>
-        <a routerLink="/users" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/users" class="nav-link" *ngIf="ver('usuarios')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="9" cy="8" r="3"/>
             <path d="M3 20c0-3 2.5-5 6-5s6 2 6 5"/>
@@ -182,7 +183,7 @@
           </svg>
           <span>Usuarios y Roles</span>
         </a>
-        <a routerLink="/permissions" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/permissions" class="nav-link" *ngIf="ver('permisos')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="4" y="10" width="16" height="10" rx="2"/>
             <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
@@ -190,7 +191,7 @@
           <span>Permisos</span>
         </a>
         <!-- MODIFICADO (Fase 3 - CU04): perfil de clientes por empresa, solo SUPER_ADMIN y ADMIN_EMPRESA. -->
-        <a routerLink="/clients" class="nav-link" *ngIf="puedeVerEmpresas">
+        <a routerLink="/clients" class="nav-link" *ngIf="ver('clientes')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="8" r="3.5"/>
             <path d="M5 21c0-3.5 3-6.5 7-6.5s7 3 7 6.5"/>
@@ -198,7 +199,7 @@
           <span>Clientes</span>
         </a>
         <!-- NUEVO (Fase 3 - CU18): descuento por fidelidad (regla y monitoreo del mes). -->
-        <a routerLink="/clients/fidelidad" class="nav-link" *ngIf="puedeVerEmpresas">
+        <a routerLink="/clients/fidelidad" class="nav-link" *ngIf="ver('fidelidad')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <rect x="3" y="8" width="18" height="4" rx="1"/>
             <path d="M5 12v9h14v-9"/>
@@ -207,7 +208,7 @@
           </svg>
           <span>Fidelidad</span>
         </a>
-        <a routerLink="/bitacora" class="nav-link" *ngIf="esPersonal">
+        <a routerLink="/bitacora" class="nav-link" *ngIf="ver('bitacora')">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M6 3h9l3 3v15H6z"/>
             <path d="M9 9h6M9 13h6M9 17h4"/>

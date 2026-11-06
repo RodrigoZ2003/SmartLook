@@ -4,11 +4,14 @@
 // movimientos (antes solo mostraba el historial, sin poder crear
 // ninguno desde la UI - el método registerMovement() del servicio
 // existía pero nadie lo llamaba).
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo se
+// muestran con el permiso GESTIONAR de la pantalla (puedeGestionar).
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { InventoryService } from '../../services/inventory.service';
 import { InventoryMovement } from '../../../../core/models/inventory.interface';
+import { AccesoService } from '../../../../core/auth/acceso.service';
 
 @Component({
   selector: 'app-movement-history',
@@ -16,6 +19,9 @@ import { InventoryMovement } from '../../../../core/models/inventory.interface';
   styleUrls: ['./movement-history.component.scss']
 })
 export class MovementHistoryComponent implements OnInit {
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  puedeGestionar = inject(AccesoService).puedeGestionar('inventario');
   movements: InventoryMovement[] = [];
   sucursales: any[] = [];
   variantes: any[] = [];

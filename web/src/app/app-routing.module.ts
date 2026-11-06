@@ -8,6 +8,10 @@
 // NUEVO (SaaS): se agrega la ruta 'empresas' (SUPER_ADMIN y ADMIN_EMPRESA).
 // NUEVO (Fase 3): la raíz muestra el catálogo público y /producto/:id su
 // detalle (modules/inicio) en vez de redirigir al login; va antes del layout.
+// MODIFICADO (arreglo RF02): RoleGuard decide cada pantalla con la tabla de
+// roles y los privilegios de los grupos (AccesoService). En las rutas con
+// subpantallas (pos, inventory, store, clients, assistant-admin) también se
+// usa como canActivateChild; reservas y entregas ahora también pasan por él.
 import { NgModule } from '@angular/core';
 import {
   RouterModule,
@@ -70,6 +74,7 @@ const routes: Routes = [
       {
         path: 'pos',
         canActivate: [AuthGuard, RoleGuard],
+        canActivateChild: [RoleGuard],
         data: { rolesExcluidos: ['CLIENTE'] },
         loadChildren: () =>
           import('./modules/pos/pos.module')
@@ -78,6 +83,7 @@ const routes: Routes = [
       {
         path: 'inventory',
         canActivate: [AuthGuard, RoleGuard],
+        canActivateChild: [RoleGuard],
         data: { rolesExcluidos: ['CLIENTE'] },
         loadChildren: () =>
           import('./modules/inventory/inventory.module')
@@ -86,6 +92,7 @@ const routes: Routes = [
       {
         path: 'store',
         canActivate: [AuthGuard, RoleGuard],
+        canActivateChild: [RoleGuard],
         data: { rolesExcluidos: ['CLIENTE'] },
         loadChildren: () =>
           import('./modules/store/store.module')
@@ -118,6 +125,7 @@ const routes: Routes = [
       {
         path: 'clients',
         canActivate: [AuthGuard, RoleGuard],
+        canActivateChild: [RoleGuard],
         data: { rolesExcluidos: ['CLIENTE'] },
         loadChildren: () =>
           import('./modules/clients/clients.module')
@@ -141,7 +149,7 @@ const routes: Routes = [
       },
       {
         path: 'reservations',
-        canActivate: [AuthGuard],
+        canActivate: [AuthGuard, RoleGuard],
         loadChildren: () =>
           import('./modules/reservations/reservations.module')
             .then(m => m.ReservationsModule)
@@ -155,7 +163,7 @@ const routes: Routes = [
       },
       {
         path: 'deliveries',
-        canActivate: [AuthGuard],
+        canActivate: [AuthGuard, RoleGuard],
         loadChildren: () =>
           import('./modules/deliveries/deliveries.module')
             .then(m => m.DeliveriesModule)
@@ -171,6 +179,7 @@ const routes: Routes = [
       {
         path: 'assistant-admin',
         canActivate: [AuthGuard, RoleGuard],
+        canActivateChild: [RoleGuard],
         data: { rolesExcluidos: ['CLIENTE', 'CAJERO', 'REPARTIDOR'] },
         loadChildren: () =>
           import('./modules/assistant-admin/assistant-admin.module')

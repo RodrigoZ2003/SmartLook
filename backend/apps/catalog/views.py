@@ -1,3 +1,6 @@
+# backend/apps/catalog/views.py
+# MODIFICADO (arreglo RF02): _es_admin también acepta el privilegio GESTIONAR
+# de la pantalla que da un grupo (ver lo inactivo para poder editarlo).
 from rest_framework.viewsets import ModelViewSet, ReadOnlyModelViewSet
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from django.db.models import Q
@@ -7,6 +10,7 @@ from common.permissions import (
     IsAdminEmpresaOrReadOnly,
     IsGlobalEditableSoloSuperAdmin,
 )
+from common.privilegios import modulo_de_request, privilegio_requerido, privilegios_de_request
 from common.tenancy import EmpresaScopedMixin, empresa_para_crear, validar_relaciones
 from apps.users_auth.suscripciones import SuscripcionService
 from .models import (
@@ -40,11 +44,19 @@ from .serializers import (
 
 
 def _es_admin(request):
-    """True si el usuario es SUPER_ADMIN o ADMIN_EMPRESA (ve también lo inactivo)."""
+    """True si el usuario es SUPER_ADMIN o ADMIN_EMPRESA (ve también lo inactivo).
+
+    MODIFICADO (arreglo RF02): también quien tiene por un grupo el privilegio
+    GESTIONAR de esa pantalla (por ejemplo GESTIONAR_PRODUCTOS), para que pueda
+    ver y reactivar lo que está inactivo.
+    """
     usuario = request.user
-    return usuario.is_authenticated and usuario.roles.filter(
-        nombre__in=["SUPER_ADMIN", "ADMIN_EMPRESA"]
-    ).exists()
+    if not usuario.is_authenticated:
+        return False
+    if usuario.roles.filter(nombre__in=["SUPER_ADMIN", "ADMIN_EMPRESA"]).exists():
+        return True
+    gestionar = privilegio_requerido(modulo_de_request(request), "POST")
+    return bool(gestionar) and gestionar in privilegios_de_request(request)
 
 
 # ----------------------------------------------------------------------

@@ -1,8 +1,9 @@
 <!-- web/src/app/modules/users/pages/user-management/user-management.component.html -->
+<!-- MODIFICADO (arreglo RF02): botones de crear, editar y eliminar solo con puedeGestionar. -->
 <div class="users-container">
   <div class="header">
     <h2>Usuarios y Roles</h2>
-    <button class="btn btn-primary" (click)="showForm ? cancelar() : nuevoUsuario()">
+    <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showForm ? cancelar() : nuevoUsuario()">
       {{ showForm ? 'Cancelar' : 'Nuevo Usuario' }}
     </button>
   </div>
@@ -93,8 +94,8 @@
             </span>
           </td>
           <td>
-            <button class="btn btn-link" (click)="editarUsuario(usuario)">Editar</button>
-            <button class="btn btn-link danger" (click)="eliminarUsuario(usuario)">Eliminar</button>
+            <button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarUsuario(usuario)">Editar</button>
+            <button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarUsuario(usuario)">Eliminar</button>
           </td>
         </tr>
         <tr *ngIf="!loading && usuarios.length === 0">

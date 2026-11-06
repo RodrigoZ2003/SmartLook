@@ -1,7 +1,8 @@
+<!-- MODIFICADO (arreglo RF02): botones de crear, editar y eliminar solo con puedeGestionar. -->
 <div class="store-container">
   <div class="header">
     <h2>Gestión de Proveedores</h2>
-    <button class="btn btn-primary" (click)="showForm = !showForm">
+    <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showForm = !showForm">
       {{ showForm ? 'Cancelar' : 'Nuevo Proveedor' }}
     </button>
   </div>
@@ -55,7 +56,7 @@
           <td>{{ supplier.correo || 'N/A' }}</td>
           <td>{{ supplier.direccion || 'N/A' }}</td>
           <td>
-            <button class="btn btn-danger btn-sm" (click)="deleteSupplier(supplier.id_proveedor)">Eliminar</button>
+            <button *ngIf="puedeGestionar" class="btn btn-danger btn-sm" (click)="deleteSupplier(supplier.id_proveedor)">Eliminar</button>
           </td>
         </tr>
       </tbody>

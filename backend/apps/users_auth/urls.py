@@ -1,5 +1,6 @@
 # backend/apps/users_auth/urls.py
 # MODIFICADO (Fase 2 - CU16): rutas del centro de notificaciones.
+# MODIFICADO (arreglo RF02): permisos del usuario que inició sesión.
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
@@ -13,6 +14,7 @@ from .views import (
 from .views_suscripcion import PlanSuscripcionViewSet, SuscripcionViewSet
 from .views_empresa import EmpresaViewSet, PerfilView
 from .views_notificaciones import NotificacionViewSet
+from .views_grupos import MisPrivilegiosView
 
 router = DefaultRouter()
 router.register("usuarios", UsuarioViewSet, basename="usuarios")
@@ -32,5 +34,7 @@ urlpatterns = [
     path("login/", LoginView.as_view(), name="login"),
     # NUEVO: perfil del usuario autenticado (consulta y edición).
     path("perfil/", PerfilView.as_view(), name="perfil"),
+    # NUEVO (arreglo RF02): permisos actuales del rol del usuario.
+    path("mis-privilegios/", MisPrivilegiosView.as_view(), name="mis-privilegios"),
     path("", include(router.urls)),
 ]

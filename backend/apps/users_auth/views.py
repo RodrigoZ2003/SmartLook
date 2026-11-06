@@ -1,6 +1,11 @@
 # backend/apps/users_auth/views.py
 # MODIFICADO (Fase 2 - reservas con anticipo): al iniciar sesión se procesan
 # los vencimientos de reservas (ver _vencer_reservas_al_ingresar).
+# MODIFICADO (arreglo RF02 - usuarios, roles y permisos): el login devuelve los
+# permisos del rol del usuario; en "Permisos por rol" solo se guardan los de
+# ENCARGADO_SUCURSAL, CAJERO y REPARTIDOR (SUPER_ADMIN y ADMIN_EMPRESA hacen
+# todo); y quien gestiona usuarios por un permiso de su rol (sin ser
+# administrador) no puede asignar ni tocar administradores.
 import logging
 
 from rest_framework import status
@@ -16,6 +21,7 @@ from django.db.models import Q
 from drf_spectacular.utils import extend_schema
 
 from common.permissions import IsAdminEmpresa, IsSuperAdmin
+from common.privilegios import ASIGNABLES, ROLES_CONFIGURABLES
 from common.tenancy import alcance_de, empresa_para_crear, filtrar_queryset
 from .suscripciones import SuscripcionService
 from .models import Usuario, Cliente, Rol, Permiso, RolPermiso, Bitacora
@@ -30,6 +36,7 @@ from .serializers import (
     BitacoraSerializer,
 )
 from .services import AuthService
+from .serializers_grupos import datos_sesion
 from common.utils import log_audit, get_client_ip
 
 logger = logging.getLogger(__name__)
@@ -140,7 +147,7 @@ class LoginView(APIView):
                 return Response(
                     {
                         "tokens": tokens,
-                        "usuario": UsuarioSerializer(usuario).data,
+                        "usuario": datos_sesion(usuario),
                     },
                     status=status.HTTP_200_OK,
                 )
@@ -161,6 +168,11 @@ class LoginView(APIView):
 # SUPER_ADMIN solo lo asigna otro SUPER_ADMIN y CLIENTE no se asigna desde
 # administración (los clientes se registran solos y son globales).
 ROLES_DE_EMPRESA = {"ADMIN_EMPRESA", "ENCARGADO_SUCURSAL", "CAJERO", "REPARTIDOR"}
+
+# NUEVO (arreglo RF02): roles que puede asignar quien gestiona usuarios por un
+# permiso de su rol (GESTIONAR_USUARIOS) sin ser SUPER_ADMIN ni ADMIN_EMPRESA.
+ROLES_ASIGNABLES_POR_GRUPO = {"ENCARGADO_SUCURSAL", "CAJERO", "REPARTIDOR"}
+ROLES_ADMINISTRADORES = {"SUPER_ADMIN", "ADMIN_EMPRESA"}
 
 class UsuarioViewSet(ModelViewSet):
     """Gestión de usuarios acotada a la empresa del administrador.
@@ -218,6 +230,10 @@ class UsuarioViewSet(ModelViewSet):
 
         return UsuarioSerializer
 
+    def _es_administrador(self):
+        """True si quien hace la petición es SUPER_ADMIN o ADMIN_EMPRESA (no solo por un permiso)."""
+        return self.request.user.roles.filter(nombre__in=ROLES_ADMINISTRADORES).exists()
+
     def _validar_rol(self, rol):
         """Impide que el personal de una empresa asigne roles superiores o de cliente."""
         if rol is None:
@@ -225,6 +241,17 @@ class UsuarioViewSet(ModelViewSet):
         alcance = alcance_de(self.request)
         if not alcance.super_admin and rol.nombre not in ROLES_DE_EMPRESA:
             raise PermissionDenied(f"No puedes asignar el rol {rol.nombre}.")
+        if not self._es_administrador() and rol.nombre not in ROLES_ASIGNABLES_POR_GRUPO:
+            raise PermissionDenied(
+                f"Solo el administrador de la empresa puede asignar el rol {rol.nombre}."
+            )
+
+    def _validar_objetivo(self, usuario):
+        """Quien gestiona usuarios por un permiso no puede editar ni eliminar administradores."""
+        if self._es_administrador():
+            return
+        if usuario.roles.filter(nombre__in=ROLES_ADMINISTRADORES).exists():
+            raise PermissionDenied("Solo el administrador de la empresa puede modificar a un administrador.")
 
     @staticmethod
     def _validar_sucursal(sucursal, empresa_id):
@@ -266,6 +293,7 @@ class UsuarioViewSet(ModelViewSet):
 
     def perform_update(self, serializer):
         """Edita el usuario sin permitir roles superiores ni sucursales de otra empresa."""
+        self._validar_objetivo(serializer.instance)
         self._validar_rol(serializer.validated_data.get("rol"))
         if "id_sucursal" in serializer.validated_data:
             self._validar_sucursal(
@@ -277,6 +305,7 @@ class UsuarioViewSet(ModelViewSet):
         """Elimina un usuario de la empresa (nadie puede eliminarse a sí mismo)."""
         if instance.id_usuario == self.request.user.id_usuario:
             raise ValidationError({"error": "No puedes eliminar tu propio usuario."})
+        self._validar_objetivo(instance)
         instance.delete()
 
 class RolViewSet(ReadOnlyModelViewSet):
@@ -316,13 +345,20 @@ class RolViewSet(ReadOnlyModelViewSet):
             )
             return Response({"permisos": ids_asignados})
 
+        # NUEVO (arreglo RF02): solo se configuran los roles del personal de
+        # tienda y solo con los permisos de las pantallas.
+        if rol.nombre not in ROLES_CONFIGURABLES:
+            raise ValidationError(
+                {"error": f"El rol {rol.nombre} no se configura aquí: tiene sus accesos fijos."}
+            )
+
         ids_nuevos = request.data.get("permisos", [])
 
         with transaction.atomic():
             RolPermiso.objects.filter(id_rol=rol).delete()
 
             permisos_validos = Permiso.objects.filter(
-                id_permiso__in=ids_nuevos
+                id_permiso__in=ids_nuevos, nombre__in=ASIGNABLES
             )
 
             RolPermiso.objects.bulk_create([
@@ -347,9 +383,12 @@ class RolViewSet(ReadOnlyModelViewSet):
         })
 
 class PermisoViewSet(ReadOnlyModelViewSet):
-    queryset = Permiso.objects.all()
+    # MODIFICADO (arreglo RF02): solo los permisos de las pantallas (no los
+    # del cliente), en el orden en que se crearon y sin paginar.
+    queryset = Permiso.objects.filter(nombre__in=ASIGNABLES).order_by("id_permiso")
     serializer_class = PermisoSerializer
     permission_classes = [IsAdminEmpresa]
+    pagination_class = None
 
 class BitacoraViewSet(ReadOnlyModelViewSet):
     serializer_class = BitacoraSerializer

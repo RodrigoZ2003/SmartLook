@@ -1,4 +1,5 @@
 <!-- web/src/app/modules/permissions/pages/permission-management/permission-management.component.html -->
+<!-- MODIFICADO (arreglo RF02): solo el SUPER_ADMIN guarda; el resto ve los permisos sin poder cambiarlos. -->
 <div class="permissions-container">
   <div class="header">
     <h2>Permisos por Rol</h2>
@@ -24,6 +25,7 @@
           <input
             type="checkbox"
             [checked]="estaAsignado(permiso.id_permiso)"
+            [disabled]="!puedeGuardar"
             (change)="toggle(permiso.id_permiso)">
           <span>
             <strong>{{ permiso.nombre }}</strong>
@@ -34,7 +36,7 @@
         <p *ngIf="permisos.length === 0">No hay permisos registrados en el catálogo.</p>
       </div>
 
-      <button class="btn btn-success" (click)="guardar()" [disabled]="guardando">
+      <button class="btn btn-success" *ngIf="puedeGuardar" (click)="guardar()" [disabled]="guardando">
         {{ guardando ? 'Guardando...' : 'Guardar Permisos' }}
       </button>
     </div>

@@ -2,10 +2,13 @@
 //
 // Archivo YA EXISTENTE. Se agregan 4 secciones más (Categorías, Marcas,
 // Temporadas, Colecciones), mismo patrón que Tallas/Colores.
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo se
+// muestran con el permiso GESTIONAR de la pantalla (puedeGestionar).
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { AttributeService } from '../../services/attribute.service';
+import { AccesoService } from '../../../../core/auth/acceso.service';
 
 @Component({
   selector: 'app-attribute-management',
@@ -13,6 +16,9 @@ import { AttributeService } from '../../services/attribute.service';
   styleUrls: ['./attribute-management.component.scss']
 })
 export class AttributeManagementComponent implements OnInit {
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  puedeGestionar = inject(AccesoService).puedeGestionar('atributos');
   tallas: any[] = [];
   colores: any[] = [];
   categorias: any[] = [];

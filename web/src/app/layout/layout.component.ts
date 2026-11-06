@@ -22,6 +22,10 @@
 // solo SUPER_ADMIN y ADMIN_EMPRESA, con plan que incluya IA).
 // NUEVO (Fase 3 - CU07): puedeVerTraspasos (traspasos entre sucursales:
 // SUPER_ADMIN, ADMIN_EMPRESA y ENCARGADO_SUCURSAL).
+// MODIFICADO (arreglo RF02 - usuarios, grupos y privilegios): cada opción del
+// menú se decide con ver(<pantalla>) (AccesoService: tabla de roles acordada +
+// privilegios de los grupos del usuario). Al abrir el panel se refrescan los
+// privilegios por si el administrador cambió algún grupo.
 import { Component, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { Subscription, timer } from 'rxjs';
@@ -33,6 +37,7 @@ import { ConexionService } from '../core/services/conexion.service';
 import { PosOfflineService } from '../modules/pos/services/pos-offline.service';
 import { ReservaOfflineService } from '../modules/reservations/services/reserva-offline.service';
 import { Notificacion, NotificacionesService } from '../core/services/notificaciones.service';
+import { AccesoService, Modulo } from '../core/auth/acceso.service';
 const ROLES_PERSONAL = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL', 'CAJERO'];
 const ROLES_ENTREGAS = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL', 'REPARTIDOR'];
 const ROLES_ASISTENTE = ['SUPER_ADMIN', 'ADMIN_EMPRESA', 'ENCARGADO_SUCURSAL'];
@@ -87,7 +92,8 @@ export class LayoutComponent implements OnDestroy {
     private conexion: ConexionService,
     private posOffline: PosOfflineService,
     private reservaOffline: ReservaOfflineService,
-    private notificacionesService: NotificacionesService
+    private notificacionesService: NotificacionesService,
+    private acceso: AccesoService
   ) {
     const data = localStorage.getItem('usuario');
     if (data) {
@@ -113,6 +119,15 @@ export class LayoutComponent implements OnDestroy {
     this.iniciarPlan();
     this.iniciarConexion();
     this.iniciarNotificaciones();
+    // NUEVO (arreglo RF02): privilegios actuales de sus grupos.
+    if (this.esPersonal || this.esSoloRepartidor) {
+      this.suscripciones.add(this.acceso.refrescar().subscribe());
+    }
+  }
+
+  /** NUEVO (arreglo RF02): true si el usuario puede ver esa pantalla (rol o grupo). */
+  ver(modulo: Modulo): boolean {
+    return this.acceso.puedeVer(modulo);
   }
   ngOnDestroy(): void {
     this.suscripciones.unsubscribe();

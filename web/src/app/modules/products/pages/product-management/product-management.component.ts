@@ -1,8 +1,11 @@
 // web/src/app/modules/products/pages/product-management/product-management.component.ts
-import { Component, OnInit } from '@angular/core';
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo se
+// muestran con el permiso GESTIONAR de la pantalla (puedeGestionar).
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { ProductService } from '../../services/product.service';
 import { AttributeService } from '../../../attributes/services/attribute.service';
+import { AccesoService } from '../../../../core/auth/acceso.service';
 
 @Component({
   selector: 'app-product-management',
@@ -10,6 +13,9 @@ import { AttributeService } from '../../../attributes/services/attribute.service
   styleUrls: ['./product-management.component.scss']
 })
 export class ProductManagementComponent implements OnInit {
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  puedeGestionar = inject(AccesoService).puedeGestionar('productos');
   productos: any[] = [];
   categorias: any[] = [];
   marcas: any[] = [];

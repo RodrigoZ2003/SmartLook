@@ -1,10 +1,20 @@
 // web/src/app/modules/permissions/pages/permission-management/permission-management.component.ts
 //
-// Archivo NUEVO.
+// MODIFICADO (arreglo RF02 - usuarios, roles y permisos): la misma pantalla de
+// antes, pero ahora los permisos que se guardan SÍ se aplican (menú, rutas y
+// backend):
+// - Solo se configuran ENCARGADO_SUCURSAL, CAJERO y REPARTIDOR. SUPER_ADMIN y
+//   ADMIN_EMPRESA hacen todo; el cliente tiene sus pantallas de siempre.
+// - Solo el SUPER_ADMIN guarda (los roles son de toda la plataforma); el
+//   ADMIN_EMPRESA puede ver los permisos de cada rol.
 
 import { Component, OnInit } from '@angular/core';
 import { UserService } from '../../../../core/services/user.service';
+import { AuthService } from '../../../../core/auth/auth.service';
 import { Role, Permiso } from '../../../../core/models/user.interface';
+
+// Roles cuyos permisos se configuran aquí.
+const ROLES_CONFIGURABLES = ['ENCARGADO_SUCURSAL', 'CAJERO', 'REPARTIDOR'];
 
 @Component({
   selector: 'app-permission-management',
@@ -18,17 +28,20 @@ export class PermissionManagementComponent implements OnInit {
   idsPermisosAsignados: Set<number> = new Set();
   loading = false;
   guardando = false;
+  puedeGuardar = false;
   errorMessage: string | null = null;
   successMessage: string | null = null;
 
-  constructor(private userService: UserService) {}
+  constructor(
+    private userService: UserService,
+    private authService: AuthService
+  ) {}
 
   ngOnInit(): void {
-    // A diferencia de "Usuarios y Roles", aquí SÍ se incluye el rol
-    // CLIENTE: sus permisos también se gestionan desde este panel,
-    // aunque los clientes se registren solos (CU01) y no se creen aquí.
+    this.puedeGuardar = this.authService.obtenerRoles().includes('SUPER_ADMIN');
+
     this.userService.getRoles().subscribe({
-      next: (data) => this.roles = data,
+      next: (data) => this.roles = data.filter(rol => ROLES_CONFIGURABLES.includes(rol.nombre)),
       error: () => this.roles = []
     });
 
@@ -39,9 +52,12 @@ export class PermissionManagementComponent implements OnInit {
   }
 
   seleccionarRol(idRol: number): void {
-    this.idRolSeleccionado = idRol;
+    this.idRolSeleccionado = idRol || null;
     this.errorMessage = null;
     this.successMessage = null;
+    if (!this.idRolSeleccionado) {
+      return;
+    }
     this.loading = true;
 
     this.userService.getRolPermisos(idRol).subscribe({
@@ -69,7 +85,7 @@ export class PermissionManagementComponent implements OnInit {
   }
 
   guardar(): void {
-    if (this.idRolSeleccionado === null) return;
+    if (this.idRolSeleccionado === null || !this.puedeGuardar) return;
 
     this.guardando = true;
     this.errorMessage = null;

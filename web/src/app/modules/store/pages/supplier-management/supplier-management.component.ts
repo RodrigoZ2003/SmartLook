@@ -1,7 +1,11 @@
-import { Component, OnInit } from '@angular/core';
+// web/src/app/modules/store/pages/supplier-management/supplier-management.component.ts
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo se
+// muestran con el permiso GESTIONAR de la pantalla (puedeGestionar).
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { SupplierService } from '../../services/supplier.service';
 import { Supplier } from '../../../../core/models/branch.interface';
+import { AccesoService } from '../../../../core/auth/acceso.service';
 
 @Component({
   selector: 'app-supplier-management',
@@ -9,6 +13,9 @@ import { Supplier } from '../../../../core/models/branch.interface';
   styleUrls: ['./supplier-management.component.scss']
 })
 export class SupplierManagementComponent implements OnInit {
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  puedeGestionar = inject(AccesoService).puedeGestionar('proveedores');
   suppliers: Supplier[] = [];
   supplierForm!: FormGroup;
   loading = false;

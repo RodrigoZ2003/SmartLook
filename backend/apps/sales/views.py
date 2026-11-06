@@ -1,6 +1,9 @@
 # backend/apps/sales/views.py
 # MODIFICADO (Fase 3 - CU18): descuento por fidelidad en la cotización del
 # delivery y en la venta POS (el POS web envía aplicar_fidelidad=true).
+# MODIFICADO (arreglo RF02): los privilegios de grupo cuentan como personal de
+# tienda en entregas (VER/GESTIONAR_ENTREGAS), cambios (GESTIONAR_CAMBIOS) y
+# devoluciones (VER/GESTIONAR_DEVOLUCIONES).
 from collections import Counter
 
 from django.db import transaction
@@ -12,6 +15,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from common.permissions import IsCajero, IsCliente, IsEncargadoSucursal, IsRepartidor
+from common.privilegios import tiene_alguno
 from common.tenancy import alcance_de, filtrar_queryset
 from common.utils import log_audit
 from apps.users_auth.models import Cliente, Empresa, Usuario
@@ -330,8 +334,11 @@ class DeliveryViewSet(ReadOnlyModelViewSet):
         return [IsRepartidor()]
 
     def _es_gestor(self):
-        """True si el usuario gestiona entregas (no es solo repartidor)."""
-        return self.request.user.roles.filter(nombre__in=ROLES_GESTION).exists()
+        """True si el usuario gestiona entregas (no es solo repartidor), por su rol o por un grupo."""
+        usuario = self.request.user
+        return usuario.roles.filter(nombre__in=ROLES_GESTION).exists() or tiene_alguno(
+            usuario, "VER_ENTREGAS", "GESTIONAR_ENTREGAS"
+        )
 
     def get_queryset(self):
         """Entregas de la empresa del usuario (el repartidor solo ve las suyas)."""
@@ -586,6 +593,9 @@ class SyncOperacionViewSet(ReadOnlyModelViewSet):
 
 # NUEVO (Fase 2 - CU05 / CU06): cambio de prenda por talla o color.
 ROLES_TIENDA_CAMBIOS = {"SUPER_ADMIN", "ADMIN_EMPRESA", "ENCARGADO_SUCURSAL", "CAJERO"}
+# NUEVO (arreglo RF02): privilegios de grupo que cuentan como personal de tienda.
+PRIVILEGIOS_TIENDA_CAMBIOS = ("GESTIONAR_CAMBIOS",)
+PRIVILEGIOS_TIENDA_DEVOLUCIONES = ("VER_DEVOLUCIONES", "GESTIONAR_DEVOLUCIONES")
 
 
 def _leer_mes(texto):
@@ -641,6 +651,12 @@ class CambioPrendaViewSet(ReadOnlyModelViewSet):
             self._roles_cache = set(self.request.user.roles.values_list("nombre", flat=True))
         return self._roles_cache
 
+    def _es_tienda(self, roles):
+        """True si es personal de tienda por su rol o por un grupo (arreglo RF02)."""
+        return bool(roles & ROLES_TIENDA_CAMBIOS) or tiene_alguno(
+            self.request.user, *PRIVILEGIOS_TIENDA_CAMBIOS
+        )
+
     def _cliente(self):
         """Ficha de cliente del usuario (o None)."""
         return Cliente.objects.filter(id_usuario=self.request.user).first()
@@ -664,7 +680,7 @@ class CambioPrendaViewSet(ReadOnlyModelViewSet):
             "completado_por",
         )
         roles = self._roles()
-        if roles & ROLES_TIENDA_CAMBIOS:
+        if self._es_tienda(roles):
             return filtrar_queryset(queryset, self.request)
         if "REPARTIDOR" in roles:
             return filtrar_queryset(queryset, self.request).filter(id_repartidor=self.request.user)
@@ -825,7 +841,7 @@ class CambioPrendaViewSet(ReadOnlyModelViewSet):
         except ValueError as e:
             return Response({"error": str(e)}, status=404)
         roles = self._roles()
-        if roles & ROLES_TIENDA_CAMBIOS:
+        if self._es_tienda(roles):
             empresa_id = self._empresa_del_personal()
             if empresa_id is not None and origen.empresa_id != empresa_id:
                 return Response({"error": "La prenda no existe."}, status=404)
@@ -983,6 +999,12 @@ class DevolucionViewSet(ReadOnlyModelViewSet):
             self._roles_cache = set(self.request.user.roles.values_list("nombre", flat=True))
         return self._roles_cache
 
+    def _es_tienda(self, roles):
+        """True si es personal de tienda por su rol o por un grupo (arreglo RF02)."""
+        return bool(roles & ROLES_TIENDA_CAMBIOS) or tiene_alguno(
+            self.request.user, *PRIVILEGIOS_TIENDA_DEVOLUCIONES
+        )
+
     def _cliente(self):
         """Ficha de cliente del usuario (o None)."""
         return Cliente.objects.filter(id_usuario=self.request.user).first()
@@ -1012,7 +1034,7 @@ class DevolucionViewSet(ReadOnlyModelViewSet):
             "items__id_venta_item__id_variante__id_color",
         )
         roles = self._roles()
-        if roles & ROLES_TIENDA_CAMBIOS:
+        if self._es_tienda(roles):
             return filtrar_queryset(queryset, self.request)
         if "REPARTIDOR" in roles:
             return filtrar_queryset(queryset, self.request).filter(id_repartidor=self.request.user)
@@ -1050,7 +1072,7 @@ class DevolucionViewSet(ReadOnlyModelViewSet):
     def _cargar_compra(self, tipo, numero):
         """Compra visible para el usuario: el personal, de su empresa; el cliente, sus pedidos."""
         roles = self._roles()
-        if roles & ROLES_TIENDA_CAMBIOS:
+        if self._es_tienda(roles):
             return cargar_compra(tipo, numero, empresa_id=self._empresa_del_personal()), "TIENDA"
         if "CLIENTE" in roles:
             cliente = self._cliente()

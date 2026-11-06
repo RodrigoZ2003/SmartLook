@@ -6,18 +6,24 @@
 // MODIFICADO (SaaS): el SUPER_ADMIN ve la columna Empresa y, al registrar una
 // sucursal, elige la empresa (el backend la exige con "id_empresa"). El
 // personal de una empresa sigue igual: sus sucursales se crean en su empresa.
-import { Component, OnInit } from '@angular/core';
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo se
+// muestran con el permiso GESTIONAR de la pantalla (puedeGestionar).
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { BranchService } from '../../services/branch.service';
 import { Country, City } from '../../../../core/models/branch.interface';
 import { AuthService } from '../../../../core/auth/auth.service';
 import { EmpresaService, mensajeDeError } from '../../../empresas/services/empresa.service';
+import { AccesoService } from '../../../../core/auth/acceso.service';
 @Component({
   selector: 'app-branch-management',
   templateUrl: './branch-management.component.html',
   styleUrls: ['./branch-management.component.scss']
 })
 export class BranchManagementComponent implements OnInit {
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  puedeGestionar = inject(AccesoService).puedeGestionar('sucursales');
   countries: Country[] = [];
   cities: City[] = [];
   // any: la lista trae además id_empresa y empresa_nombre (SaaS).

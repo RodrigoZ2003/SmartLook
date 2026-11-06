@@ -3,11 +3,14 @@
 // Corregido: importa UserService desde core/services (el real, ya
 // existente) y las interfaces User/Role desde core/models/user.interface
 // (las reales), en vez de duplicados propios.
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo se
+// muestran con el permiso GESTIONAR de la pantalla (puedeGestionar).
 
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { UserService } from '../../../../core/services/user.service';
 import { User, Role } from '../../../../core/models/user.interface';
+import { AccesoService } from '../../../../core/auth/acceso.service';
 
 @Component({
   selector: 'app-user-management',
@@ -15,6 +18,9 @@ import { User, Role } from '../../../../core/models/user.interface';
   styleUrls: ['./user-management.component.scss']
 })
 export class UserManagementComponent implements OnInit {
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  puedeGestionar = inject(AccesoService).puedeGestionar('usuarios');
   usuarios: User[] = [];
   roles: Role[] = [];
   userForm!: FormGroup;

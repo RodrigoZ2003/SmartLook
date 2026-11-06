@@ -1,4 +1,5 @@
 <!-- web/src/app/modules/store/pages/city-management/city-management.component.html -->
+<!-- MODIFICADO (arreglo RF02): botones de crear, editar y eliminar solo con puedeGestionar. -->
 <div class="store-container">
   <nav class="tabs">
     <a routerLink="/store/sucursales" routerLinkActive="active">Sucursales</a>
@@ -7,7 +8,7 @@
 
   <div class="header">
     <h2>Gestión de Ciudades</h2>
-    <button class="btn btn-primary" (click)="showForm ? cancelar() : nuevaCiudad()">
+    <button *ngIf="puedeGestionar" class="btn btn-primary" (click)="showForm ? cancelar() : nuevaCiudad()">
       {{ showForm ? 'Cancelar' : 'Nueva Ciudad' }}
     </button>
   </div>
@@ -59,8 +60,8 @@
             </span>
           </td>
           <td>
-            <button class="btn btn-link" (click)="editarCiudad(city)">Editar</button>
-            <button class="btn btn-link danger" (click)="eliminarCiudad(city)">Eliminar</button>
+            <button *ngIf="puedeGestionar" class="btn btn-link" (click)="editarCiudad(city)">Editar</button>
+            <button *ngIf="puedeGestionar" class="btn btn-link danger" (click)="eliminarCiudad(city)">Eliminar</button>
           </td>
         </tr>
         <tr *ngIf="cities.length === 0"><td colspan="4">No hay ciudades registradas.</td></tr>
