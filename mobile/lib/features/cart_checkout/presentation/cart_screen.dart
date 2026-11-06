@@ -7,6 +7,11 @@
 // de una reserva muestran su precio reservado, no cambian de cantidad ni se
 // quitan si la reserva está pagada (se cancela desde "Mis reservas"), y el
 // total ya viene con lo pagado al reservar descontado (se cobra solo el saldo).
+// MODIFICADO (Fase 3 - CU18, igual que la web): descuento por fidelidad. Si el
+// cliente ganó el descuento del mes en la tienda elegida y el carrito no tiene
+// reservas, se muestra la línea "Descuento por fidelidad" y el total ya
+// descontado (el envío se cobra completo). El backend vuelve a calcularlo al
+// cobrar. Debajo del resumen, un aviso con el progreso del mes en esa tienda.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart'
@@ -26,6 +31,7 @@ import 'package:latlong2/latlong.dart' show LatLng;
 import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
 import '../../../shared/theme/app_colors.dart';
+import '../../fidelidad/data/fidelidad_service.dart';
 import '../data/cart_service.dart';
 
 class _MensajeError implements Exception {
@@ -42,6 +48,7 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   late final CartService _cartService;
+  late final FidelidadService _fidelidadService;
   final MapController _mapController = MapController();
   final TextEditingController _direccionCtrl = TextEditingController();
   final TextEditingController _referenciaCtrl = TextEditingController();
@@ -77,11 +84,17 @@ class _CartScreenState extends State<CartScreen> {
   String? _clientSecret;
   bool _tarjetaCompleta = false;
 
+  // CU18: progreso del descuento por fidelidad en la tienda elegida.
+  Map<String, dynamic>? _fidelidad;
+  bool _reglaFidelidadActiva = false;
+  int _fidelidadId = 0;
+
   @override
   void initState() {
     super.initState();
     final apiClient = context.read<ApiClient>();
     _cartService = CartService(apiClient: apiClient);
+    _fidelidadService = FidelidadService(apiClient: apiClient);
     _cargar();
     _cargarSucursales();
   }
@@ -129,12 +142,27 @@ class _CartScreenState extends State<CartScreen> {
   bool get _sinSaldoParaRetiro =>
       _tipoEntrega == 'RETIRO' && _tienePagoReservas && !(_totalProductos > 0);
 
+  /// NUEVO (CU18): el carrito tiene prendas de alguna reserva.
+  bool get _tieneReservas {
+    final items = (_carrito?['items'] ?? []) as List<dynamic>;
+    return items.any((i) => i['reservado'] == true);
+  }
+
+  /// NUEVO (CU18): descuento por fidelidad sobre las prendas (0 si no aplica).
+  double get _descuentoFidelidad {
+    if (_fidelidad?['disponible'] != true || _tieneReservas) return 0;
+    return FidelidadService.descuentoSobre(_totalProductos, _fidelidad!['porcentaje']);
+  }
+
+  /// NUEVO (CU18): prendas a cobrar (con el descuento por fidelidad, si tiene).
+  double get _totalPrendas => _totalProductos - _descuentoFidelidad;
+
   double get _costoEnvio => (_tipoEntrega == 'DELIVERY' && _cotizacion != null)
       ? (double.tryParse('${_cotizacion!['costo_envio']}') ?? 0)
       : 0;
 
-  // Total a cobrar: saldo de las prendas + envío (solo si es delivery y ya hay cotización).
-  double get _totalAPagar => _totalProductos + _costoEnvio;
+  // Total a cobrar: prendas (con descuento) + envío (solo si es delivery y ya hay cotización).
+  double get _totalAPagar => _totalPrendas + _costoEnvio;
 
   bool get _pagoEnCurso => _mostrarFormularioPago || _iniciandoPago || _confirmandoPago;
 
@@ -166,6 +194,7 @@ class _CartScreenState extends State<CartScreen> {
         _loading = false;
         if (cambioTienda) _limpiarCheckout();
       });
+      _cargarFidelidad();
       final items = (elegido?['items'] ?? []) as List<dynamic>;
       // Si cambió la cantidad de prendas, el costo de envío también puede cambiar.
       if (!cambioTienda &&
@@ -178,6 +207,30 @@ class _CartScreenState extends State<CartScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _loading = false);
+    }
+  }
+
+  /// NUEVO (CU18): progreso del descuento por fidelidad en la tienda elegida.
+  /// Un fallo no se muestra: el carrito sigue sin la línea de descuento.
+  Future<void> _cargarFidelidad() async {
+    final idEmpresa = _empresaSeleccionada;
+    final id = ++_fidelidadId;
+    if (idEmpresa == null) {
+      setState(() => _fidelidad = null);
+      return;
+    }
+    try {
+      final datos = await _fidelidadService.miProgreso(idEmpresa: idEmpresa);
+      // Si cambió de tienda mientras esperaba, se descarta esta respuesta.
+      if (!mounted || id != _fidelidadId) return;
+      final regla = (datos['regla'] ?? {}) as Map;
+      setState(() {
+        _reglaFidelidadActiva = regla['activa'] == true;
+        _fidelidad = FidelidadService.filaDeEmpresa(datos, idEmpresa);
+      });
+    } catch (_) {
+      if (!mounted || id != _fidelidadId) return;
+      setState(() => _fidelidad = null);
     }
   }
 
@@ -202,8 +255,10 @@ class _CartScreenState extends State<CartScreen> {
     setState(() {
       _empresaSeleccionada = idEmpresa;
       _carrito = elegido;
+      _fidelidad = null;
       _limpiarCheckout();
     });
+    _cargarFidelidad();
   }
 
   /// Deja sin sucursal, entrega ni cotización (al cambiar de tienda).
@@ -534,6 +589,7 @@ class _CartScreenState extends State<CartScreen> {
                         for (final item in items) _tarjetaItem(item as Map<String, dynamic>),
                         const SizedBox(height: 8),
                         _resumen(),
+                        if (_fidelidad != null && _reglaFidelidadActiva) _avisoFidelidad(),
                         const SizedBox(height: 16),
                         if (!_mostrarFormularioPago) _seccionEntrega(),
                         if (_errorPago != null) ...[
@@ -755,9 +811,18 @@ class _CartScreenState extends State<CartScreen> {
           _filaResumen('Precio de las prendas', 'Bs ${_bs(_subtotalPrendas)}'),
           _filaResumen('Pagado al reservar', '- Bs ${_bs(_pagadoReservas)}', color: AppColors.success),
         ],
+        // NUEVO (CU18): descuento por fidelidad sobre las prendas.
+        if (_descuentoFidelidad > 0) ...[
+          _filaResumen('Precio de las prendas', 'Bs ${_totalProductos.toStringAsFixed(2)}'),
+          _filaResumen(
+            'Descuento por fidelidad (${FidelidadService.porcentajeTexto(_fidelidad!['porcentaje'])}%)',
+            '- Bs ${_descuentoFidelidad.toStringAsFixed(2)}',
+            color: const Color(0xFF1E6B3A),
+          ),
+        ],
         _filaResumen(
           esDelivery ? 'Subtotal' : (_tienePagoReservas ? 'Saldo a pagar' : 'Total'),
-          'Bs ${_totalProductos.toStringAsFixed(2)}',
+          'Bs ${_totalPrendas.toStringAsFixed(2)}',
           grande: !esDelivery,
         ),
         if (esDelivery && _cotizacion != null) ...[
@@ -768,6 +833,45 @@ class _CartScreenState extends State<CartScreen> {
           _filaResumen('Total a pagar', 'Bs ${_totalAPagar.toStringAsFixed(2)}', grande: true),
         ],
       ],
+    );
+  }
+
+  /// NUEVO (CU18): aviso del descuento por fidelidad en esta tienda (textos de la web).
+  Widget _avisoFidelidad() {
+    final f = _fidelidad!;
+    final porcentaje = FidelidadService.porcentajeTexto(f['porcentaje']);
+    final tienda = '${_carrito?['empresa_nombre'] ?? ''}';
+    final lista = _descuentoFidelidad > 0;
+    String texto;
+    switch (f['estado']) {
+      case 'DISPONIBLE':
+        texto = _tieneReservas
+            ? 'Tienes $porcentaje% de descuento por fidelidad, pero tu carrito tiene prendas '
+                'reservadas: se aplicará en tu próxima compra sin reservas de este mes.'
+            : '¡Tienes $porcentaje% de descuento por fidelidad en esta compra! El envío se cobra '
+                'completo. Esta compra no admite devolución ni cambio.';
+        break;
+      case 'USADO':
+        texto = 'Ya usaste tu descuento por fidelidad de este mes en $tienda (${f['uso'] ?? ''}).';
+        break;
+      default:
+        texto = 'Llevas ${f['compras']} de ${f['requeridas']} compras este mes en $tienda. '
+            'Al llegar a ${f['requeridas']}, tu siguiente compra tendrá $porcentaje% de descuento.';
+    }
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: lista ? const Color(0xFFE8F5E9) : const Color(0xFFEEF3FB),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        texto,
+        style: TextStyle(
+          color: lista ? const Color(0xFF1B5E20) : const Color(0xFF0F3460),
+          fontWeight: lista ? FontWeight.w600 : FontWeight.w400,
+        ),
+      ),
     );
   }
 

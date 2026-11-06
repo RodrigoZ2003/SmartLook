@@ -11,6 +11,9 @@
 // MODIFICADO (Fase 2 - CU05): cada prenda de un pedido con delivery
 // entregado se puede cambiar por otra talla o color (puede_solicitar_cambio)
 // y muestra el estado de su último cambio.
+// MODIFICADO (Fase 3 - CU18, igual que la web): arriba de la lista, la tarjeta
+// "Tu descuento por fidelidad" con el progreso del mes por tienda (compras de
+// N, barra y mensaje). Se carga al abrir y al deslizar para recargar.
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -19,6 +22,7 @@ import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../../cambios/presentation/cambio_solicitud_screen.dart';
+import '../../fidelidad/data/fidelidad_service.dart';
 import 'devolucion_form_screen.dart';
 
 class OrdersScreen extends StatefulWidget {
@@ -30,6 +34,9 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   late final ApiClient _api;
+  late final FidelidadService _fidelidadService;
+  // CU18: progreso del descuento por fidelidad (null si no cargó).
+  Map<String, dynamic>? _fidelidad;
   List<Map<String, dynamic>> _pedidos = [];
   bool _cargando = true;
   String? _error;
@@ -42,7 +49,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
   void initState() {
     super.initState();
     _api = context.read<ApiClient>();
+    _fidelidadService = FidelidadService(apiClient: _api);
     _cargar();
+    _cargarFidelidad();
     _timer = Timer.periodic(const Duration(seconds: 10), (_) => _cargar());
   }
 
@@ -74,6 +83,31 @@ class _OrdersScreenState extends State<OrdersScreen> {
         if (_pedidos.isEmpty) _error = 'No se pudieron cargar tus pedidos.';
       });
     }
+  }
+
+  /// NUEVO (CU18): progreso del mes por tienda. Un fallo no se muestra.
+  Future<void> _cargarFidelidad() async {
+    try {
+      final datos = await _fidelidadService.miProgreso();
+      if (!mounted) return;
+      setState(() => _fidelidad = datos);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _fidelidad = null);
+    }
+  }
+
+  /// Al deslizar hacia abajo se recargan los pedidos y el progreso.
+  Future<void> _recargarTodo() async {
+    await Future.wait([_cargar(), _cargarFidelidad()]);
+  }
+
+  /// NUEVO (CU18): la tarjeta se muestra si la regla está activa o hay tiendas (como la web).
+  bool get _mostrarFidelidad {
+    final datos = _fidelidad;
+    if (datos == null) return false;
+    final regla = (datos['regla'] ?? {}) as Map;
+    return regla['activa'] == true || FidelidadService.empresas(datos).isNotEmpty;
   }
 
   int _indicePaso(Map<String, dynamic> o) {
@@ -184,10 +218,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
       body: _cargando
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _cargar,
+              onRefresh: _recargarTodo,
               child: _pedidos.isEmpty
                   ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
                       children: [
+                        if (_mostrarFidelidad) _tarjetaFidelidad(),
                         const SizedBox(height: 120),
                         Center(
                           child: Text(
@@ -197,12 +234,143 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         ),
                       ],
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _pedidos.length,
-                      itemBuilder: (context, index) => _tarjeta(_pedidos[index]),
-                    ),
+                  : Builder(builder: (context) {
+                      // CU18: la tarjeta de fidelidad ocupa la primera posición.
+                      final extra = _mostrarFidelidad ? 1 : 0;
+                      return ListView.builder(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _pedidos.length + extra,
+                        itemBuilder: (context, index) {
+                          if (index < extra) return _tarjetaFidelidad();
+                          return _tarjeta(_pedidos[index - extra]);
+                        },
+                      );
+                    }),
             ),
+    );
+  }
+
+  /// NUEVO (CU18): "Tu descuento por fidelidad" (textos de la web).
+  Widget _tarjetaFidelidad() {
+    final datos = _fidelidad!;
+    final regla = Map<String, dynamic>.from((datos['regla'] ?? {}) as Map);
+    final activa = regla['activa'] == true;
+    final empresas = FidelidadService.empresas(datos);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Tu descuento por fidelidad',
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Color(0xFF1A1A2E)),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            activa
+                ? 'Compra ${regla['compras_requeridas']} veces en una misma tienda este mes y tu '
+                    'siguiente compra sin reservas tendrá '
+                    '${FidelidadService.porcentajeTexto(regla['porcentaje'])}% de descuento en las '
+                    'prendas. Se reinicia cada mes.'
+                : 'El descuento por fidelidad no está activo en este momento.',
+            style: const TextStyle(fontSize: 13, color: Color(0xFF6B6459)),
+          ),
+          const SizedBox(height: 8),
+          for (final e in empresas) _filaFidelidad(e, datos['vence'], activa),
+        ],
+      ),
+    );
+  }
+
+  /// Una tienda: nombre, "X de N compras", barra de progreso y mensaje según el estado.
+  Widget _filaFidelidad(Map<String, dynamic> e, dynamic vence, bool activa) {
+    final lista = e['disponible'] == true;
+    final porcentaje = FidelidadService.porcentajeTexto(e['porcentaje']);
+    final faltan = FidelidadService.numero(e['faltan']).toInt();
+    String? mensaje;
+    switch (e['estado']) {
+      case 'DISPONIBLE':
+        mensaje = '¡Tienes $porcentaje% de descuento en tu próxima compra sin reservas! '
+            'Válido hasta el ${FidelidadService.fecha(vence)}.';
+        break;
+      case 'USADO':
+        mensaje = 'Usaste tu descuento este mes en ${e['uso'] ?? ''} '
+            '(−Bs ${FidelidadService.numero(e['monto_descuento']).toStringAsFixed(2)}).';
+        break;
+      case 'EN_PROGRESO':
+        if (activa) {
+          mensaje = 'Te ${faltan == 1 ? 'falta 1 compra' : 'faltan $faltan compras'} '
+              'para ganar el descuento.';
+        }
+        break;
+    }
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: const [BoxShadow(color: Color(0x0F000000), blurRadius: 8, offset: Offset(0, 2))],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              left: BorderSide(
+                color: lista ? const Color(0xFF16A085) : const Color(0xFFE2E5EC),
+                width: 4,
+              ),
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${e['empresa'] ?? ''}',
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+                    ),
+                  ),
+                  Text(
+                    '${e['compras']} de ${e['requeridas']} compras',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F3460),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: FidelidadService.avance(e['compras'], e['requeridas']),
+                  minHeight: 8,
+                  backgroundColor: const Color(0xFFEEF0F4),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF16A085)),
+                ),
+              ),
+              if (mensaje != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  mensaje,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: lista ? const Color(0xFF1E6B3A) : const Color(0xFF1A1A2E),
+                    fontWeight: lista ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
     );
   }
 

@@ -5,6 +5,9 @@
 # (429, 5xx, tiempo agotado, clave inválida o respuesta vacía) se intenta con
 # el otro. Claves y modelos vienen de settings (variables de entorno); las
 # claves nunca se escriben en los logs.
+# MODIFICADO (Fase 3): OpenAI como tercer respaldo (Groq -> Gemini -> OpenAI).
+# Solo se usa si los dos primeros fallan y si OPENAI_API_KEY está configurada.
+# Groq y OpenAI comparten el mismo formato de API (_llamar_compatible_openai).
 #
 # Uso:
 #   from apps.innovation.llm import chat
@@ -27,6 +30,7 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent"
 )
@@ -50,23 +54,29 @@ def _limpiar(texto):
     return texto.strip()
 
 
-def _llamar_groq(mensajes, herramientas, temperatura, max_tokens, forzar):
-    """Llama a Groq (API compatible con OpenAI). Devuelve (texto, llamadas)."""
+def _llamar_compatible_openai(
+    url, clave, modelo, mensajes, herramientas, temperatura, max_tokens, forzar
+):
+    """
+    Llama a una API con formato OpenAI (Groq u OpenAI).
+    Devuelve (texto, llamadas).
+    """
     cuerpo = {
-        "model": settings.GROQ_MODEL,
+        "model": modelo,
         "messages": mensajes,
         "temperature": temperatura,
         "max_tokens": max_tokens,
     }
-    if settings.GROQ_MODEL.startswith("openai/gpt-oss"):
+    # Solo los modelos gpt-oss de Groq aceptan reasoning_effort.
+    if modelo.startswith("openai/gpt-oss"):
         cuerpo["reasoning_effort"] = "low"
     if herramientas:
         cuerpo["tools"] = [{"type": "function", "function": h} for h in herramientas]
         cuerpo["tool_choice"] = "required" if forzar else "auto"
 
     resp = requests.post(
-        GROQ_URL,
-        headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
+        url,
+        headers={"Authorization": f"Bearer {clave}"},
         json=cuerpo,
         timeout=settings.AI_TIMEOUT_SEG,
     )
@@ -80,6 +90,34 @@ def _llamar_groq(mensajes, herramientas, temperatura, max_tokens, forzar):
             {"nombre": tc["function"]["name"], "argumentos": json.loads(args)}
         )
     return _limpiar(msg.get("content")), llamadas
+
+
+def _llamar_groq(mensajes, herramientas, temperatura, max_tokens, forzar):
+    """Llama a Groq (proveedor principal). Devuelve (texto, llamadas)."""
+    return _llamar_compatible_openai(
+        GROQ_URL,
+        settings.GROQ_API_KEY,
+        settings.GROQ_MODEL,
+        mensajes,
+        herramientas,
+        temperatura,
+        max_tokens,
+        forzar,
+    )
+
+
+def _llamar_openai(mensajes, herramientas, temperatura, max_tokens, forzar):
+    """Llama a OpenAI (tercer respaldo). Devuelve (texto, llamadas)."""
+    return _llamar_compatible_openai(
+        OPENAI_URL,
+        settings.OPENAI_API_KEY,
+        settings.OPENAI_MODEL,
+        mensajes,
+        herramientas,
+        temperatura,
+        max_tokens,
+        forzar,
+    )
 
 
 def _llamar_gemini(mensajes, herramientas, temperatura, max_tokens, forzar):
@@ -134,12 +172,14 @@ def _llamar_gemini(mensajes, herramientas, temperatura, max_tokens, forzar):
 
 
 def _proveedores():
-    """Proveedores con clave configurada, en orden: principal y respaldo."""
+    """Proveedores con clave configurada, en orden: principal y respaldos."""
     lista = []
     if settings.GROQ_API_KEY:
         lista.append(("groq", settings.GROQ_MODEL, _llamar_groq))
     if settings.GEMINI_API_KEY:
         lista.append(("gemini", settings.GEMINI_MODEL, _llamar_gemini))
+    if settings.OPENAI_API_KEY:
+        lista.append(("openai", settings.OPENAI_MODEL, _llamar_openai))
     return lista
 
 
@@ -160,7 +200,8 @@ def chat(
     forzar_herramienta=False,
 ):
     """
-    Envía la conversación al proveedor principal y, si falla, al de respaldo.
+    Envía la conversación al proveedor principal y, si falla, a los de respaldo
+    (Groq -> Gemini -> OpenAI).
     mensajes: lista de {"role": "system"|"user"|"assistant", "content": str}.
     forzar_herramienta: obliga al modelo a elegir una de las herramientas.
     Devuelve {"texto", "llamadas", "proveedor", "modelo"} o lanza
