@@ -1,0 +1,243 @@
+// NUEVO (Fase 3): detalle público de una prenda. Colores del login.
+:host {
+  --gold: #B98B4E;
+  --gold-hover: #A47A3E;
+  --panel-bg: #FBF8F4;
+  --text-dark: #1E1A16;
+  --text-muted: #6B6459;
+  --line: rgba(30, 26, 22, 0.14);
+
+  display: block;
+  min-height: 100vh;
+  background: var(--panel-bg);
+}
+
+.contenido {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 2rem;
+}
+
+.volver {
+  display: inline-block;
+  margin-bottom: 1.25rem;
+  color: var(--gold-hover);
+  font-weight: 600;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.estado {
+  text-align: center;
+  padding: 3rem 1rem;
+  background: #fff;
+  border-radius: 8px;
+  color: var(--text-muted);
+
+  p {
+    margin: 0.75rem 0;
+  }
+}
+
+.detalle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+}
+
+.galeria {
+  min-width: 0;
+
+  img {
+    width: 100%;
+    border-radius: 8px;
+    object-fit: cover;
+  }
+}
+
+.datos {
+  min-width: 0;
+  color: var(--text-dark);
+
+  .marca {
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+
+  h1 {
+    margin: 0.5rem 0;
+  }
+
+  .tienda {
+    margin: 0 0 0.5rem;
+    font-weight: 600;
+    color: #0f3460;
+  }
+
+  .categoria {
+    color: #999;
+    margin-bottom: 1rem;
+  }
+
+  .descripcion {
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  h3 {
+    margin: 0 0 0.75rem;
+  }
+}
+
+.variantes {
+  margin-bottom: 2rem;
+
+  .lista-variantes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .variante {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.6rem 1rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+
+    &.elegida {
+      border-color: var(--gold);
+      background: rgba(185, 139, 78, 0.08);
+    }
+
+    .color {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 1px solid #ccc;
+    }
+
+    .precio-variante {
+      font-weight: 600;
+      color: #0f3460;
+      margin-left: 0.5rem;
+    }
+  }
+}
+
+.disponibilidad {
+  margin-bottom: 2rem;
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+
+    th,
+    td {
+      padding: 0.6rem;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+  }
+
+  .disponible {
+    color: #4caf50;
+    font-weight: 600;
+  }
+
+  .agotado {
+    color: #f44336;
+    font-weight: 600;
+  }
+
+  .nota {
+    color: #999;
+    font-style: italic;
+  }
+}
+
+.accion {
+  .precio {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+
+    .etiqueta {
+      color: var(--text-muted);
+    }
+
+    .valor {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #0f3460;
+    }
+  }
+
+  .unidades {
+    margin: 0 0 1rem;
+    color: #4caf50;
+
+    &.agotada {
+      color: #f44336;
+    }
+  }
+}
+
+.btn-oro {
+  display: inline-block;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--gold);
+  border-radius: 6px;
+  color: #fff;
+  background: var(--gold);
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--gold-hover);
+  }
+}
+
+.btn-bloque {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+// Teléfono: una sola columna.
+@media (max-width: 768px) {
+  .contenido {
+    padding: 1rem;
+  }
+
+  .detalle {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .galeria img {
+    max-height: 360px;
+  }
+
+  .disponibilidad table {
+    font-size: 0.85rem;
+  }
+}

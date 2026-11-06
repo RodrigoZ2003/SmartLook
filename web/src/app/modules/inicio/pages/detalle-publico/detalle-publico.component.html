@@ -1,0 +1,94 @@
+<!-- NUEVO (Fase 3): detalle público de una prenda. -->
+<app-barra-publica></app-barra-publica>
+
+<main class="contenido">
+  <a routerLink="/" class="volver">← Volver al catálogo</a>
+
+  <div class="estado" *ngIf="cargando">
+    <app-loading-spinner></app-loading-spinner>
+    <p>Cargando...</p>
+  </div>
+
+  <div class="estado" *ngIf="!cargando && error">
+    <p>No se pudo cargar esta prenda.</p>
+    <button type="button" class="btn-oro" (click)="reintentar()">Reintentar</button>
+  </div>
+
+  <div class="detalle" *ngIf="!cargando && producto">
+    <div class="galeria">
+      <img
+        [src]="varianteElegida?.imagen_variante || producto.imagen_producto || 'assets/placeholder.png'"
+        [alt]="producto.nombre">
+    </div>
+
+    <div class="datos">
+      <span class="marca" *ngIf="producto.marca?.nombre">{{ producto.marca?.nombre }}</span>
+      <h1>{{ producto.nombre }}</h1>
+      <p class="tienda" *ngIf="producto.empresa_nombre">Vendido por {{ producto.empresa_nombre }}</p>
+      <p class="categoria">{{ producto.categoria?.nombre }}</p>
+      <p class="descripcion" *ngIf="producto.descripcion">{{ producto.descripcion }}</p>
+      <div class="meta">
+        <span><strong>Tipo:</strong> {{ producto.tipo_prenda }}</span>
+        <span><strong>Género:</strong> {{ producto.genero }}</span>
+        <span><strong>Colección:</strong> {{ producto.coleccion?.nombre || 'N/A' }}</span>
+      </div>
+
+      <section class="variantes" *ngIf="producto.variantes && producto.variantes.length > 0">
+        <h3>Variantes Disponibles</h3>
+        <div class="lista-variantes">
+          <button
+            type="button"
+            *ngFor="let variante of producto.variantes"
+            class="variante"
+            [class.elegida]="varianteElegida?.id_variante === variante.id_variante"
+            (click)="elegirVariante(variante)">
+            <span class="color" [style.background]="variante.color?.codigo_hex || '#ccc'"></span>
+            <span>{{ variante.talla?.nombre }} - {{ variante.color?.nombre }}</span>
+            <span class="precio-variante">Bs {{ variante.precio }}</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="disponibilidad" *ngIf="varianteElegida">
+        <h3>Disponibilidad por Sucursal</h3>
+        <p class="nota" *ngIf="cargandoStock">Consultando disponibilidad...</p>
+        <p class="nota" *ngIf="!cargandoStock && stockPorSucursal.length === 0">
+          No hay stock registrado en ninguna sucursal para esta variante.
+        </p>
+        <table *ngIf="!cargandoStock && stockPorSucursal.length > 0">
+          <thead>
+            <tr>
+              <th>Sucursal</th>
+              <th>Ciudad</th>
+              <th>Cantidad</th>
+              <th>Estado</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let stock of stockPorSucursal">
+              <td>{{ stock.sucursal_nombre }}</td>
+              <td>{{ stock.ciudad }}</td>
+              <td>{{ stock.cantidad }}</td>
+              <td>
+                <span [class]="stock.disponible ? 'disponible' : 'agotado'">
+                  {{ stock.disponible ? 'Disponible' : 'Agotado' }}
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="accion" *ngIf="varianteElegida">
+        <div class="precio">
+          <span class="etiqueta">Precio:</span>
+          <span class="valor">Bs {{ varianteElegida.precio }}</span>
+        </div>
+        <p class="unidades" [class.agotada]="varianteElegida.cantidad <= 0">
+          {{ varianteElegida.cantidad > 0 ? varianteElegida.cantidad + ' unidades disponibles' : 'Agotado' }}
+        </p>
+        <a routerLink="/auth/login" class="btn-oro btn-bloque">Iniciar sesión para comprar o reservar</a>
+      </section>
+    </div>
+  </div>
+</main>

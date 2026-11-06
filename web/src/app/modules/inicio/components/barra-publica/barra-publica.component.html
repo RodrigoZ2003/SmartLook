@@ -1,0 +1,18 @@
+<!-- NUEVO (Fase 3): barra de las páginas públicas. -->
+<header class="barra">
+  <a routerLink="/" class="marca">
+    <img src="assets/images/logotipo-smartlook.png" alt="SmartLook">
+  </a>
+  <form class="buscador" (ngSubmit)="buscar()">
+    <input
+      type="search"
+      [formControl]="busqueda"
+      placeholder="Buscar prenda..."
+      aria-label="Buscar prenda">
+    <button type="submit">Buscar</button>
+  </form>
+  <nav class="acciones">
+    <a routerLink="/auth/login" class="btn-linea">Iniciar sesión</a>
+    <a routerLink="/auth/registro" class="btn-oro">Registrarse</a>
+  </nav>
+</header>

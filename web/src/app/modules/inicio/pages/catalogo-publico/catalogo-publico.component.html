@@ -1,0 +1,39 @@
+<!-- NUEVO (Fase 3): catálogo público de la raíz del sitio. -->
+<app-barra-publica [texto]="texto"></app-barra-publica>
+
+<main class="contenido">
+  <header class="portada">
+    <h1>Catálogo</h1>
+  </header>
+
+  <div class="cuerpo">
+    <div class="estado" *ngIf="cargando">
+      <app-loading-spinner></app-loading-spinner>
+      <p>Cargando catálogo...</p>
+    </div>
+
+    <ng-container *ngIf="!cargando">
+      <ng-container *ngIf="!error">
+        <p class="conteo">
+          {{ productos.length }} productos encontrados
+          <button type="button" class="link" *ngIf="texto" (click)="verTodo()">Ver todo</button>
+        </p>
+        <div class="grilla" *ngIf="productos.length > 0">
+          <app-product-card
+            *ngFor="let producto of productos"
+            [product]="producto"
+            [rutaDetalle]="rutaDetalle(producto)">
+          </app-product-card>
+        </div>
+        <div class="vacio" *ngIf="productos.length === 0">
+          <p>No se encontraron productos.</p>
+        </div>
+      </ng-container>
+
+      <div class="vacio" *ngIf="error">
+        <p>No se pudo cargar el catálogo.</p>
+        <button type="button" class="btn-oro" (click)="reintentar()">Reintentar</button>
+      </div>
+    </ng-container>
+  </div>
+</main>

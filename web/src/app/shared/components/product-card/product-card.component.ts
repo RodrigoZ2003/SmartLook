@@ -1,4 +1,6 @@
 // MODIFICADO: rango de precio más corto ("Bs 120.00 – 136.00"), igual que en el móvil.
+// MODIFICADO (Fase 3): rutaDetalle opcional. El catálogo público la usa para
+// que "Ver Detalle" lleve al login; sin ella, sigue yendo al detalle.
 import { Component, Input } from '@angular/core';
 import { Router } from '@angular/router';
 import { Product } from '../../../core/models/product.interface';
@@ -10,6 +12,7 @@ import { Product } from '../../../core/models/product.interface';
 })
 export class ProductCardComponent {
   @Input() product!: Product;
+  @Input() rutaDetalle: string | null = null;
 
   constructor(private router: Router) {}
 
@@ -24,6 +27,10 @@ export class ProductCardComponent {
   }
 
   verDetalle(): void {
+    if (this.rutaDetalle) {
+      this.router.navigateByUrl(this.rutaDetalle);
+      return;
+    }
     this.router.navigate(['/catalog', this.product.id_producto]);
   }
 }

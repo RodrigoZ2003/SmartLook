@@ -1,0 +1,128 @@
+// NUEVO (Fase 3): barra de las páginas públicas. Colores del login.
+:host {
+  --gold: #B98B4E;
+  --gold-hover: #A47A3E;
+  --text-dark: #1E1A16;
+  --line: rgba(30, 26, 22, 0.14);
+
+  display: block;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.barra {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 2rem;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+.marca img {
+  display: block;
+  height: 40px;
+  width: auto;
+}
+
+.buscador {
+  flex: 1;
+  display: flex;
+  max-width: 560px;
+
+  input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.6rem 0.9rem;
+    border: 1px solid var(--line);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    font-size: 0.95rem;
+    color: var(--text-dark);
+    background: #fff;
+
+    &:focus {
+      outline: none;
+      border-color: var(--gold);
+    }
+  }
+
+  button {
+    padding: 0 1.1rem;
+    border: none;
+    border-radius: 0 6px 6px 0;
+    background: var(--gold);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--gold-hover);
+    }
+  }
+}
+
+.acciones {
+  display: flex;
+  gap: 0.6rem;
+  margin-left: auto;
+}
+
+.btn-linea,
+.btn-oro {
+  display: inline-block;
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 0.92rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn-linea {
+  border: 1px solid var(--gold);
+  color: var(--gold-hover);
+  background: transparent;
+
+  &:hover {
+    background: rgba(185, 139, 78, 0.08);
+  }
+}
+
+.btn-oro {
+  border: 1px solid var(--gold);
+  color: #fff;
+  background: var(--gold);
+
+  &:hover {
+    background: var(--gold-hover);
+  }
+}
+
+// Teléfono: logo y botones arriba, buscador debajo.
+@media (max-width: 768px) {
+  .barra {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .marca img {
+    height: 32px;
+  }
+
+  .buscador {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .btn-linea,
+  .btn-oro {
+    padding: 0.45rem 0.7rem;
+    font-size: 0.85rem;
+  }
+}

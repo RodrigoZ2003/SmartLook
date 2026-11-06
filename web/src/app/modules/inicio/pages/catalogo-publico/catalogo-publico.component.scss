@@ -1,0 +1,158 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Inter:wght@400;500;600&display=swap');
+
+// Catálogo público SmartLook. Mismos tokens que login/dashboard.
+:host {
+  --bg-deep: #14110F;
+  --bg-deep-2: #1E1A16;
+  --ivory: #F5EFE6;
+  --ivory-dim: rgba(245, 239, 230, 0.68);
+  --gold: #B98B4E;
+  --gold-hover: #A47A3E;
+  --panel-bg: #FBF8F4;
+  --text-dark: #1E1A16;
+  --text-muted: #6B6459;
+  --line: rgba(30, 26, 22, 0.14);
+
+  display: block;
+  min-height: 100vh;
+  background: var(--panel-bg);
+  font-family: 'Inter', sans-serif;
+}
+
+.contenido {
+  display: block;
+}
+
+// Portada oscura a todo el ancho
+.portada {
+  padding: 2.5rem max(2rem, calc((100% - 1400px) / 2 + 2rem)) 2.25rem; // antes: 3.5rem ... 3rem
+  background:
+    radial-gradient(circle at 85% 20%, rgba(185, 139, 78, 0.14), transparent 45%),
+    linear-gradient(160deg, var(--bg-deep) 0%, var(--bg-deep-2) 100%);
+
+  h1 {
+    margin: 0;
+    font-family: 'Fraunces', serif;
+    font-weight: 500;
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    letter-spacing: 0.01em;
+    color: var(--ivory);
+
+    &::after {
+      content: '';
+      display: block;
+      width: 56px;
+      height: 2px;
+      margin-top: 1rem;
+      background: var(--gold);
+    }
+  }
+}
+
+.cuerpo {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+// Barra de conteo
+.conteo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 1.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--gold-hover);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px solid var(--gold-hover);
+
+  &:hover {
+    color: var(--text-dark);
+    border-bottom-color: var(--text-dark);
+  }
+}
+
+// Grilla de productos
+.grilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 2rem 1.5rem;
+
+  app-product-card {
+    display: block;
+    transition: transform 0.2s ease;
+
+    &:hover {
+      transform: translateY(-4px);
+    }
+  }
+}
+
+// Estados: cargando / vacío / error
+.estado,
+.vacio {
+  text-align: center;
+  padding: 4rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--text-muted);
+
+  p {
+    margin: 0.75rem 0;
+    font-size: 0.95rem;
+  }
+}
+
+.btn-oro {
+  padding: 0.65rem 1.4rem;
+  border: none;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--panel-bg);
+  background: var(--gold);
+  cursor: pointer;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: var(--gold-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--gold-hover);
+    outline-offset: 2px;
+  }
+}
+
+@media (max-width: 768px) {
+  .portada {
+    padding: 2.5rem 1rem 2rem;
+  }
+
+  .cuerpo {
+    padding: 1.25rem 1rem;
+  }
+}
+
+// Teléfono: catálogo en dos columnas.
+@media (max-width: 600px) {
+  .grilla {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.25rem 0.75rem;
+  }
+}

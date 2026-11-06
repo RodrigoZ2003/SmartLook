@@ -6,6 +6,8 @@
 // pero nunca se habían registrado aquí - la ruta no existía.
 // NUEVO (devoluciones): se agrega la ruta 'devoluciones'.
 // NUEVO (SaaS): se agrega la ruta 'empresas' (SUPER_ADMIN y ADMIN_EMPRESA).
+// NUEVO (Fase 3): la raíz muestra el catálogo público y /producto/:id su
+// detalle (modules/inicio) en vez de redirigir al login; va antes del layout.
 import { NgModule } from '@angular/core';
 import {
   RouterModule,
@@ -20,6 +22,17 @@ const routes: Routes = [
     loadChildren: () =>
       import('./modules/auth/auth.module')
         .then(m => m.AuthModule)
+  },
+  // NUEVO (Fase 3): páginas públicas sin el menú lateral: la raíz
+  // (https://.../) muestra el catálogo público y /producto/:id su detalle.
+  // Debe ir ANTES de la ruta del layout: si va después, '' coincide primero
+  // con LayoutComponent y se ve el menú con la página vacía. Las demás rutas
+  // no coinciden en este módulo y siguen con el layout.
+  {
+    path: '',
+    loadChildren: () =>
+      import('./modules/inicio/inicio.module')
+        .then(m => m.InicioModule)
   },
   {
     path: '',
@@ -171,11 +184,6 @@ const routes: Routes = [
             .then(m => m.ProfileModule)
       }
     ]
-  },
-  {
-    path: '',
-    redirectTo: 'auth/login',
-    pathMatch: 'full'
   },
   {
     path: '**',
