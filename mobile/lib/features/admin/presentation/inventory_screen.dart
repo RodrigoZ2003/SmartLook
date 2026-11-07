@@ -2,11 +2,14 @@
 //
 // Archivo NUEVO. Dos pestañas: Stock (solo lectura) y Movimientos (solo
 // lectura + botón para registrar uno nuevo vía formulario).
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo
+// se muestran con el permiso GESTIONAR de la pantalla (_puedeGestionar).
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/services/auth_service.dart';
 import '../data/inventory_service.dart';
 
 class InventoryScreen extends StatefulWidget {
@@ -27,9 +30,15 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   bool _cargando = true;
   final _formatoFecha = DateFormat('dd/MM/yyyy HH:mm');
 
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  late final bool _puedeGestionar;
+
   @override
   void initState() {
     super.initState();
+    _puedeGestionar =
+        context.read<AuthService>().currentUser?.puedeGestionar('inventario') ?? false;
     _tabController = TabController(length: 2, vsync: this);
     _service = InventoryService(apiClient: context.read<ApiClient>());
     _cargarTodo();
@@ -211,7 +220,9 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: !_puedeGestionar
+          ? null
+          : FloatingActionButton(
         onPressed: _abrirFormularioMovimiento,
         child: const Icon(Icons.add),
       ),

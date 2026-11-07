@@ -2,10 +2,13 @@
 //
 // Reemplaza branch_list_screen.dart (que era solo lectura). Ahora es
 // CRUD completo, con dos pestañas: Sucursales / Ciudades.
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo
+// se muestran con el permiso GESTIONAR de la pantalla (_puedeGestionar).
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../data/store_service.dart';
 
@@ -26,9 +29,15 @@ class _BranchManagementScreenState extends State<BranchManagementScreen>
   List<dynamic> _paises = [];
   bool _cargando = true;
 
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  late final bool _puedeGestionar;
+
   @override
   void initState() {
     super.initState();
+    _puedeGestionar =
+        context.read<AuthService>().currentUser?.puedeGestionar('sucursales') ?? false;
     _tabController = TabController(length: 2, vsync: this);
     _service = StoreService(apiClient: context.read<ApiClient>());
     _cargarTodo();
@@ -336,7 +345,9 @@ class _BranchManagementScreenState extends State<BranchManagementScreen>
           tabs: const [Tab(text: 'Sucursales'), Tab(text: 'Ciudades')],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: !_puedeGestionar
+          ? null
+          : FloatingActionButton(
         onPressed: () {
           if (_tabController.index == 0) {
             _formularioSucursal();
@@ -368,11 +379,11 @@ class _BranchManagementScreenState extends State<BranchManagementScreen>
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
+                            if (_puedeGestionar) IconButton(
                               icon: const Icon(Icons.edit_outlined, size: 20),
                               onPressed: () => _formularioSucursal(sucursal: s),
                             ),
-                            IconButton(
+                            if (_puedeGestionar) IconButton(
                               icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
                               onPressed: () => _eliminarSucursal(s),
                             ),
@@ -395,11 +406,11 @@ class _BranchManagementScreenState extends State<BranchManagementScreen>
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
+                            if (_puedeGestionar) IconButton(
                               icon: const Icon(Icons.edit_outlined, size: 20),
                               onPressed: () => _formularioCiudad(ciudad: c),
                             ),
-                            IconButton(
+                            if (_puedeGestionar) IconButton(
                               icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
                               onPressed: () => _eliminarCiudad(c),
                             ),

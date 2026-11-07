@@ -10,6 +10,9 @@
 // SUPER_ADMIN, ADMIN_EMPRESA, ENCARGADO_SUCURSAL y CAJERO.
 // MODIFICADO (Fase 2 - CU16): campana de notificaciones con contador, solo
 // para SUPER_ADMIN y ADMIN_EMPRESA (el resto del personal no recibe avisos).
+// MODIFICADO (arreglo RF02): las tarjetas se muestran según los permisos del
+// rol (User.puedeVer; SUPER_ADMIN y ADMIN_EMPRESA ven todo) y se quita la
+// tarjeta "Permisos" (los permisos se configuran desde la web).
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,7 +29,6 @@ import '../../cambios/presentation/cambios_tienda_screen.dart';
 import '../../devoluciones/presentation/devoluciones_tienda_screen.dart';
 import '../../notificaciones/presentation/notificaciones_screen.dart';
 import 'user_management_screen.dart';
-import 'permission_management_screen.dart';
 import 'bitacora_list_screen.dart';
 import 'client_list_screen.dart';
 import 'inventory_screen.dart';
@@ -52,7 +54,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   @override
   void initState() {
     super.initState();
-    final usuario = context.read<AuthService>().currentUser;
+    final authService = context.read<AuthService>();
+    final usuario = authService.currentUser;
+    // NUEVO (arreglo RF02): trae los permisos actuales del rol.
+    authService.refrescarPrivilegios();
     final recibeAvisos =
         (usuario?.hasRole('SUPER_ADMIN') ?? false) || (usuario?.hasRole('ADMIN_EMPRESA') ?? false);
     if (recibeAvisos) {
@@ -101,31 +106,30 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final usuario = authService.currentUser;
     final esSuperAdmin = usuario?.hasRole('SUPER_ADMIN') ?? false;
     final esAdminEmpresa = usuario?.hasRole('ADMIN_EMPRESA') ?? false;
-    final esEncargado = usuario?.hasRole('ENCARGADO_SUCURSAL') ?? false;
-    final esCajero = usuario?.hasRole('CAJERO') ?? false;
-    final personalTienda = esSuperAdmin || esAdminEmpresa || esEncargado || esCajero;
+    // NUEVO (arreglo RF02): cada tarjeta solo si el rol tiene el permiso.
+    bool ver(String pantalla) => usuario?.puedeVer(pantalla) ?? false;
 
     final secciones = <_SeccionAdmin>[
-      _SeccionAdmin('Dashboard', Icons.dashboard_outlined, 'dashboard'),
+      if (ver('dashboard')) _SeccionAdmin('Dashboard', Icons.dashboard_outlined, 'dashboard'),
       if (esSuperAdmin || (esAdminEmpresa && usuario?.idEmpresa != null))
         _SeccionAdmin(esSuperAdmin ? 'Empresas' : 'Mi empresa', Icons.business_outlined, 'empresas'),
-      _SeccionAdmin('Catálogo', Icons.shopping_bag_outlined, 'catalogo'),
-      _SeccionAdmin('Punto de Venta', Icons.point_of_sale_outlined, 'pos'),
-      // NUEVO (Fase 2 - CU05 / CU12): mismos roles que en el backend.
-      if (personalTienda) _SeccionAdmin('Cambios de prenda', Icons.swap_horiz, 'cambios'),
-      if (personalTienda) _SeccionAdmin('Devoluciones', Icons.assignment_return_outlined, 'devoluciones'),
-      _SeccionAdmin('Usuarios y Roles', Icons.people_outline, 'usuarios'),
-      _SeccionAdmin('Productos', Icons.checkroom_outlined, 'productos'),
-      _SeccionAdmin('Atributos de Producto', Icons.straighten_outlined, 'atributos'),
-      _SeccionAdmin('Permisos', Icons.lock_outline, 'permisos'),
-      _SeccionAdmin('Inventario', Icons.inventory_2_outlined, 'inventario'),
-      _SeccionAdmin('Reservas', Icons.event_available_outlined, 'reservas'),
-      _SeccionAdmin('Sucursales', Icons.storefront_outlined, 'sucursales'),
-      _SeccionAdmin('Proveedores', Icons.local_shipping_outlined, 'proveedores'),
-      _SeccionAdmin('Clientes', Icons.person_outline, 'clientes'),
-      _SeccionAdmin('Bitácora', Icons.receipt_long_outlined, 'bitacora'),
-      if (esSuperAdmin || esAdminEmpresa || esEncargado)
-        _SeccionAdmin('Entregas', Icons.delivery_dining, 'entregas'),
+      if (ver('catalogo')) _SeccionAdmin('Catálogo', Icons.shopping_bag_outlined, 'catalogo'),
+      if (ver('pos')) _SeccionAdmin('Punto de Venta', Icons.point_of_sale_outlined, 'pos'),
+      if (ver('cambios')) _SeccionAdmin('Cambios de prenda', Icons.swap_horiz, 'cambios'),
+      if (ver('devoluciones'))
+        _SeccionAdmin('Devoluciones', Icons.assignment_return_outlined, 'devoluciones'),
+      if (ver('usuarios')) _SeccionAdmin('Usuarios y Roles', Icons.people_outline, 'usuarios'),
+      if (ver('productos')) _SeccionAdmin('Productos', Icons.checkroom_outlined, 'productos'),
+      if (ver('atributos'))
+        _SeccionAdmin('Atributos de Producto', Icons.straighten_outlined, 'atributos'),
+      if (ver('inventario')) _SeccionAdmin('Inventario', Icons.inventory_2_outlined, 'inventario'),
+      if (ver('reservas')) _SeccionAdmin('Reservas', Icons.event_available_outlined, 'reservas'),
+      if (ver('sucursales')) _SeccionAdmin('Sucursales', Icons.storefront_outlined, 'sucursales'),
+      if (ver('proveedores'))
+        _SeccionAdmin('Proveedores', Icons.local_shipping_outlined, 'proveedores'),
+      if (ver('clientes')) _SeccionAdmin('Clientes', Icons.person_outline, 'clientes'),
+      if (ver('bitacora')) _SeccionAdmin('Bitácora', Icons.receipt_long_outlined, 'bitacora'),
+      if (ver('entregas')) _SeccionAdmin('Entregas', Icons.delivery_dining, 'entregas'),
     ];
 
     final nombreRol = usuario != null && usuario.roles.isNotEmpty
@@ -243,9 +247,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                         break;
                       case 'atributos':
                         _abrir(const AttributeManagementScreen());
-                        break;
-                      case 'permisos':
-                        _abrir(const PermissionManagementScreen());
                         break;
                       case 'bitacora':
                         _abrir(const BitacoraListScreen());

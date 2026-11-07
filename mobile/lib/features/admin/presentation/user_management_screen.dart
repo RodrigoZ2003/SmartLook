@@ -3,10 +3,13 @@
 // Archivo NUEVO. Lista + formulario (bottom sheet) para crear/editar
 // usuarios administrativos. El rol CLIENTE queda excluido del selector,
 // igual que en la web (los clientes se registran solos, CU01).
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo
+// se muestran con el permiso GESTIONAR de la pantalla (_puedeGestionar).
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../data/user_admin_service.dart';
 
@@ -23,9 +26,15 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   List<dynamic> _roles = [];
   bool _cargando = true;
 
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  late final bool _puedeGestionar;
+
   @override
   void initState() {
     super.initState();
+    _puedeGestionar =
+        context.read<AuthService>().currentUser?.puedeGestionar('usuarios') ?? false;
     _service = UserAdminService(apiClient: context.read<ApiClient>());
     _cargarDatos();
   }
@@ -267,7 +276,9 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Usuarios y Roles')),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: !_puedeGestionar
+          ? null
+          : FloatingActionButton(
         onPressed: () => _mostrarFormulario(),
         child: const Icon(Icons.add),
       ),
@@ -299,11 +310,11 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
+                              if (_puedeGestionar) IconButton(
                                 icon: const Icon(Icons.edit_outlined, size: 20),
                                 onPressed: () => _mostrarFormulario(usuario: usuario),
                               ),
-                              IconButton(
+                              if (_puedeGestionar) IconButton(
                                 icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
                                 onPressed: () => _confirmarEliminar(usuario),
                               ),

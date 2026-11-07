@@ -2,10 +2,13 @@
 //
 // Reemplaza la versión anterior (2 pestañas: Tallas/Colores). Ahora
 // tiene 6: Categorías, Marcas, Temporadas, Colecciones, Tallas, Colores.
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo
+// se muestran con el permiso GESTIONAR de la pantalla (_puedeGestionar).
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../data/attribute_service.dart';
 
@@ -29,9 +32,15 @@ class _AttributeManagementScreenState extends State<AttributeManagementScreen>
   List<dynamic> _colores = [];
   bool _cargando = true;
 
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  late final bool _puedeGestionar;
+
   @override
   void initState() {
     super.initState();
+    _puedeGestionar =
+        context.read<AuthService>().currentUser?.puedeGestionar('atributos') ?? false;
     _tabController = TabController(length: 6, vsync: this);
     _service = AttributeService(apiClient: context.read<ApiClient>());
     _cargarTodo();
@@ -495,11 +504,11 @@ class _AttributeManagementScreenState extends State<AttributeManagementScreen>
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
+                if (_puedeGestionar) IconButton(
                   icon: const Icon(Icons.edit_outlined, size: 20),
                   onPressed: () => editar(item: item),
                 ),
-                IconButton(
+                if (_puedeGestionar) IconButton(
                   icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
                   onPressed: () => eliminar(item),
                 ),
@@ -529,7 +538,9 @@ class _AttributeManagementScreenState extends State<AttributeManagementScreen>
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: !_puedeGestionar
+          ? null
+          : FloatingActionButton(
         onPressed: () {
           switch (_tabController.index) {
             case 0:
@@ -584,8 +595,8 @@ class _AttributeManagementScreenState extends State<AttributeManagementScreen>
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _formularioTemporada(temporada: t)),
-                            IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger), onPressed: () => _confirmarEliminar('temporada', t['nombre'], () => _service.eliminarTemporada(t['id_temporada']))),
+                            if (_puedeGestionar) IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _formularioTemporada(temporada: t)),
+                            if (_puedeGestionar) IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger), onPressed: () => _confirmarEliminar('temporada', t['nombre'], () => _service.eliminarTemporada(t['id_temporada']))),
                           ],
                         ),
                       );
@@ -605,8 +616,8 @@ class _AttributeManagementScreenState extends State<AttributeManagementScreen>
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _formularioColeccion(coleccion: c)),
-                            IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger), onPressed: () => _confirmarEliminar('colección', c['nombre'], () => _service.eliminarColeccion(c['id_coleccion']))),
+                            if (_puedeGestionar) IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _formularioColeccion(coleccion: c)),
+                            if (_puedeGestionar) IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger), onPressed: () => _confirmarEliminar('colección', c['nombre'], () => _service.eliminarColeccion(c['id_coleccion']))),
                           ],
                         ),
                       );
@@ -626,8 +637,8 @@ class _AttributeManagementScreenState extends State<AttributeManagementScreen>
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _formularioTalla(talla: t)),
-                            IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger), onPressed: () => _confirmarEliminar('talla', t['nombre'], () => _service.eliminarTalla(t['id_talla']))),
+                            if (_puedeGestionar) IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _formularioTalla(talla: t)),
+                            if (_puedeGestionar) IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger), onPressed: () => _confirmarEliminar('talla', t['nombre'], () => _service.eliminarTalla(t['id_talla']))),
                           ],
                         ),
                       );
@@ -648,8 +659,8 @@ class _AttributeManagementScreenState extends State<AttributeManagementScreen>
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _formularioColor(color: c)),
-                            IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger), onPressed: () => _confirmarEliminar('color', c['nombre'], () => _service.eliminarColor(c['id_color']))),
+                            if (_puedeGestionar) IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _formularioColor(color: c)),
+                            if (_puedeGestionar) IconButton(icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger), onPressed: () => _confirmarEliminar('color', c['nombre'], () => _service.eliminarColor(c['id_color']))),
                           ],
                         ),
                       );

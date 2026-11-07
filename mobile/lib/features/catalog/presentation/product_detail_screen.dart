@@ -7,6 +7,8 @@
 // guardada, avisando que puede estar desactualizada.
 // Del modelo solo se importan Product y ProductVariant: sus clases Color/Size
 // chocan con las de Flutter.
+// MODIFICADO (vestidor virtual): al abrir el vestidor se le pasa la talla de
+// la variante elegida, para ajustar el tamaño de la prenda.
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -383,6 +385,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                       overlayImageUrl: _selectedVariant!.imagenVariante ??
                                           _product!.imagenProducto,
                                       nombreProducto: _product!.nombre,
+                                      // NUEVO (vestidor): la talla elegida ajusta el tamaño de la prenda.
+                                      talla: _selectedVariant!.talla?.nombre,
                                     ),
                                   ),
                                 );

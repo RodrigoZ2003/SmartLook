@@ -4,10 +4,13 @@
 // "Variantes" en un producto. Usa producto['variantes'] (ya viene
 // anidado desde el backend) como punto de partida, y recarga la lista
 // completa de productos tras cada cambio para refrescarlo.
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo
+// se muestran con el permiso GESTIONAR de la pantalla (_puedeGestionar).
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../data/product_admin_service.dart';
 import '../data/attribute_service.dart';
@@ -30,9 +33,15 @@ class _ProductVariantsScreenState extends State<ProductVariantsScreen> {
   List<dynamic> _colores = [];
   bool _cargando = true;
 
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  late final bool _puedeGestionar;
+
   @override
   void initState() {
     super.initState();
+    _puedeGestionar =
+        context.read<AuthService>().currentUser?.puedeGestionar('productos') ?? false;
     _producto = widget.producto;
     final apiClient = context.read<ApiClient>();
     _service = ProductAdminService(apiClient: apiClient);
@@ -254,7 +263,9 @@ class _ProductVariantsScreenState extends State<ProductVariantsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text('Variantes: ${_producto['nombre'] ?? ''}')),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: !_puedeGestionar
+          ? null
+          : FloatingActionButton(
         onPressed: () => _formularioVariante(),
         child: const Icon(Icons.add),
       ),
@@ -273,11 +284,11 @@ class _ProductVariantsScreenState extends State<ProductVariantsScreen> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          IconButton(
+                          if (_puedeGestionar) IconButton(
                             icon: const Icon(Icons.edit_outlined, size: 20),
                             onPressed: () => _formularioVariante(variante: v),
                           ),
-                          IconButton(
+                          if (_puedeGestionar) IconButton(
                             icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
                             onPressed: () => _eliminarVariante(v),
                           ),

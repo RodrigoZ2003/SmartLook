@@ -5,6 +5,9 @@
 // - logout() usa clearToken() (borra tokens + usuario).
 // - actualizarDatosLocales() mantiene al día el usuario en memoria y en
 //   storage después de editar el perfil (conserva empresa y sucursal).
+// MODIFICADO (arreglo RF02): refrescarPrivilegios() vuelve a pedir los
+// permisos del rol (GET /auth/mis-privilegios/) al abrir el panel, así un
+// cambio en "Permisos por rol" se nota sin cerrar sesión.
 
 import 'dart:convert';
 import 'package:dio/dio.dart';
@@ -151,6 +154,29 @@ class AuthService extends ChangeNotifier {
       // Si lo guardado no es válido, se corrige en el próximo inicio de sesión.
     }
     notifyListeners();
+  }
+
+  /// NUEVO (arreglo RF02): actualiza los permisos del rol del usuario de la
+  /// sesión (memoria y storage). Si falla (sin internet), se dejan los del login.
+  Future<void> refrescarPrivilegios() async {
+    final actual = _currentUser;
+    if (actual == null) return;
+    try {
+      final response = await apiClient.dio.get('/auth/mis-privilegios/');
+      final privilegios = (response.data['privilegios'] as List<dynamic>? ?? [])
+          .map((p) => p.toString())
+          .toList();
+      _currentUser = actual.copyWith(privilegios: privilegios);
+      final guardado = await apiClient.getUser();
+      if (guardado != null) {
+        final mapa = Map<String, dynamic>.from(jsonDecode(guardado) as Map);
+        mapa['privilegios'] = privilegios;
+        await apiClient.saveUser(jsonEncode(mapa));
+      }
+      notifyListeners();
+    } catch (_) {
+      // Sin conexión o error del servidor: se conservan los permisos del login.
+    }
   }
 
   Future<void> logout() async {

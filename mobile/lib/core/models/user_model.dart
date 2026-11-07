@@ -3,6 +3,43 @@
 // MODIFICADO (SaaS - A.2): el usuario trae su empresa y su sucursal
 // (vacías para SUPER_ADMIN y clientes). Se agregan la pantalla de inicio
 // según el rol (misma regla que la web) y copyWith().
+// MODIFICADO (arreglo RF02): el usuario trae los permisos de su rol
+// ("privilegios", vienen en el login y en /auth/mis-privilegios/) y
+// puedeVer() decide qué tarjetas del panel se muestran (misma regla que la
+// web: SUPER_ADMIN y ADMIN_EMPRESA todo; el resto según sus permisos).
+// puedeGestionar() decide si se muestran los botones de crear, editar y
+// eliminar dentro de cada pantalla.
+
+// NUEVO (arreglo RF02): pantalla del panel -> permisos que la muestran
+// (VER_x o GESTIONAR_x), igual que REGLAS de acceso.service.ts en la web.
+const Map<String, List<String>> _permisosPorPantalla = {
+  'dashboard': ['VER_DASHBOARD'],
+  'catalogo': ['CONSULTAR_CATALOGO'],
+  'reservas': ['VER_RESERVAS', 'GESTIONAR_RESERVAS'],
+  'pos': ['REGISTRAR_VENTAS'],
+  'cambios': ['GESTIONAR_CAMBIOS'],
+  'devoluciones': ['VER_DEVOLUCIONES', 'GESTIONAR_DEVOLUCIONES'],
+  'entregas': ['VER_ENTREGAS', 'GESTIONAR_ENTREGAS'],
+  'inventario': ['VER_INVENTARIO', 'GESTIONAR_INVENTARIO'],
+  'sucursales': ['VER_SUCURSALES', 'GESTIONAR_SUCURSALES'],
+  'productos': ['VER_PRODUCTOS', 'GESTIONAR_PRODUCTOS'],
+  'proveedores': ['VER_PROVEEDORES', 'GESTIONAR_PROVEEDORES'],
+  'atributos': ['VER_ATRIBUTOS', 'GESTIONAR_ATRIBUTOS'],
+  'usuarios': ['VER_USUARIOS', 'GESTIONAR_USUARIOS'],
+  'clientes': ['VER_CLIENTES'],
+  'bitacora': ['VER_BITACORA'],
+};
+
+// NUEVO (arreglo RF02): pantalla -> permiso GESTIONAR que muestra los botones
+// de crear, editar y eliminar.
+const Map<String, String> _gestionarPorPantalla = {
+  'inventario': 'GESTIONAR_INVENTARIO',
+  'sucursales': 'GESTIONAR_SUCURSALES',
+  'productos': 'GESTIONAR_PRODUCTOS',
+  'proveedores': 'GESTIONAR_PROVEEDORES',
+  'atributos': 'GESTIONAR_ATRIBUTOS',
+  'usuarios': 'GESTIONAR_USUARIOS',
+};
 
 class User {
   /// Roles que entran al panel (igual que ROLES_PERSONAL de la web).
@@ -26,6 +63,8 @@ class User {
   final String? empresaNombre;
   final int? idSucursal;
   final String? sucursalNombre;
+  // NUEVO (arreglo RF02): permisos del rol del usuario.
+  final List<String> privilegios;
 
   User({
     required this.idUsuario,
@@ -40,6 +79,7 @@ class User {
     this.empresaNombre,
     this.idSucursal,
     this.sucursalNombre,
+    this.privilegios = const [],
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
@@ -58,11 +98,19 @@ class User {
       empresaNombre: json['empresa_nombre'] as String?,
       idSucursal: json['id_sucursal'] as int?,
       sucursalNombre: json['sucursal_nombre'] as String?,
+      privilegios: (json['privilegios'] as List<dynamic>? ?? [])
+          .map((p) => p.toString())
+          .toList(),
     );
   }
 
   /// Copia con los datos personales cambiados (lo demás se conserva).
-  User copyWith({String? nombres, String? apellidos, String? telefono}) {
+  User copyWith({
+    String? nombres,
+    String? apellidos,
+    String? telefono,
+    List<String>? privilegios,
+  }) {
     return User(
       idUsuario: idUsuario,
       nombres: nombres ?? this.nombres,
@@ -76,6 +124,7 @@ class User {
       empresaNombre: empresaNombre,
       idSucursal: idSucursal,
       sucursalNombre: sucursalNombre,
+      privilegios: privilegios ?? this.privilegios,
     );
   }
 
@@ -83,6 +132,25 @@ class User {
 
   bool hasRole(String roleName) {
     return roles.any((role) => role.nombre == roleName);
+  }
+
+  /// NUEVO (arreglo RF02): SUPER_ADMIN y ADMIN_EMPRESA hacen todo.
+  bool get esAdministrador => hasRole('SUPER_ADMIN') || hasRole('ADMIN_EMPRESA');
+
+  /// NUEVO (arreglo RF02): true si el usuario puede ver esa pantalla del
+  /// panel. El backend vuelve a validar todo; aquí solo se decide qué se muestra.
+  bool puedeVer(String pantalla) {
+    if (esAdministrador) return true;
+    final permisos = _permisosPorPantalla[pantalla] ?? const <String>[];
+    return permisos.any(privilegios.contains);
+  }
+
+  /// NUEVO (arreglo RF02): true si además puede crear, editar y eliminar en
+  /// esa pantalla.
+  bool puedeGestionar(String pantalla) {
+    if (esAdministrador) return true;
+    final permiso = _gestionarPorPantalla[pantalla];
+    return permiso != null && privilegios.contains(permiso);
   }
 
   bool get esPersonal => roles.any((r) => rolesPersonal.contains(r.nombre));

@@ -2,10 +2,13 @@
 //
 // Archivo NUEVO. CRUD completo (ProveedorViewSet es ModelViewSet,
 // IsAdminEmpresa).
+// MODIFICADO (arreglo RF02): los botones de crear, editar y eliminar solo
+// se muestran con el permiso GESTIONAR de la pantalla (_puedeGestionar).
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_client.dart';
+import '../../../core/services/auth_service.dart';
 import '../../../shared/theme/app_colors.dart';
 import '../data/store_service.dart';
 
@@ -21,9 +24,15 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
   List<dynamic> _proveedores = [];
   bool _cargando = true;
 
+  // NUEVO (arreglo RF02): crear, editar y eliminar solo con el permiso
+  // GESTIONAR de esta pantalla (SUPER_ADMIN y ADMIN_EMPRESA siempre).
+  late final bool _puedeGestionar;
+
   @override
   void initState() {
     super.initState();
+    _puedeGestionar =
+        context.read<AuthService>().currentUser?.puedeGestionar('proveedores') ?? false;
     _service = StoreService(apiClient: context.read<ApiClient>());
     _cargar();
   }
@@ -204,7 +213,9 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Proveedores')),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton: !_puedeGestionar
+          ? null
+          : FloatingActionButton(
         onPressed: () => _mostrarFormulario(),
         child: const Icon(Icons.add),
       ),
@@ -234,11 +245,11 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              IconButton(
+                              if (_puedeGestionar) IconButton(
                                 icon: const Icon(Icons.edit_outlined, size: 20),
                                 onPressed: () => _mostrarFormulario(proveedor: proveedor),
                               ),
-                              IconButton(
+                              if (_puedeGestionar) IconButton(
                                 icon: Icon(Icons.delete_outline, size: 20, color: AppColors.danger),
                                 onPressed: () => _confirmarEliminar(proveedor),
                               ),
